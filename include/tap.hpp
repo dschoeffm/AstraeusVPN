@@ -14,6 +14,8 @@ public:
 
 	int read(void *buffer, size_t bufLen);
 	int write(const void *buffer, size_t bufLen);
+
+	int getFd();
 };
 
 #endif /* TAP_HPP */

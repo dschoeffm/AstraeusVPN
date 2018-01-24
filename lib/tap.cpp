@@ -52,5 +52,10 @@ TapDevice::~TapDevice() { close(fd); };
 
 int TapDevice::read(void *buffer, size_t bufLen) { return ::read(fd, buffer, bufLen); };
 int TapDevice::write(const void *buffer, size_t bufLen) {
+	if (bufLen < 14) {
+		return 0;
+	}
 	return ::write(fd, buffer, bufLen);
 };
+
+int TapDevice::getFd() { return fd; };
