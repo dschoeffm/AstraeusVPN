@@ -9,6 +9,7 @@
 using namespace DTLS;
 using namespace std;
 
+/*
 SSL_CTX *DTLS::createClientCTX() {
 
 	int result = 0;
@@ -42,40 +43,36 @@ SSL_CTX *DTLS::createClientCTX() {
 
 	return ctx;
 };
+*/
 
-/*
-SSL_CTX *DTLS::createServerCTX(std::string keyname) {
-	SSL_CTX *ctx = createClientCTX();
+SSL_CTX *DTLS::createClientCTX() {
+	int result = 0;
 
-	// Load key and certificate
-	std::string certfile = "./" + keyname + "-cert.pem";
-	std::string keyfile = "./" + keyname + "-key.pem";
+	// Create a new context using DTLS
+	SSL_CTX *ctx = SSL_CTX_new(DTLS_method());
+	if (ctx == nullptr) {
+		throw new std::runtime_error(
+			"DTLS::createClientCTX() SSL_CTX_new(DTLS_method()) failed");
+	}
 
-	// Load the certificate file; contains also the public key
-	int result = SSL_CTX_use_certificate_file(ctx, certfile.c_str(), SSL_FILETYPE_PEM);
+	// Set our supported ciphers
+	result = SSL_CTX_set_cipher_list(ctx, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
 	if (result != 1) {
 		throw new std::runtime_error(
-			"DTLS::createServerCTX() cannot load certificate file.\n"
-			"IN CASE YOU DIDN'T CREATE ONE:\n"
-			"openssl req -x509 -newkey rsa:2048 -days 3650 -nodes -keyout server-key.pem "
-			"-out server-cert.pem\n\n");
+			"DTLS::createClientCTX() SSL_CTX_set_cipher_list() failed");
 	}
 
-	// Load private key
-	result = SSL_CTX_use_PrivateKey_file(ctx, keyfile.c_str(), SSL_FILETYPE_PEM);
-	if (result != 1) {
-		throw new std::runtime_error("DTLS::createServerCTX() cannot load private key file");
-	}
+	auto verifyFun = [](int ok, X509_STORE_CTX *ctx) {
+		(void)ok;
+		(void)ctx;
+		return 1;
+	};
 
-	// Check if the private key is valid
-	result = SSL_CTX_check_private_key(ctx);
-	if (result != 1) {
-		throw new std::runtime_error("DTLS::createServerCTX() private key check failed");
-	}
+	// The client doesn't have to send it's certificate
+	SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, verifyFun);
 
 	return ctx;
-};
-*/
+}
 
 SSL_CTX *DTLS::createServerCTX(const char *keyname) {
 	int result = 0;
