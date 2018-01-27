@@ -37,6 +37,7 @@ SET(OPENSSL_LIBS
 
 SET(ALL_LIBS
 	pthread
+	tbb
 	${OPENSSL_LIBS}
 )
 

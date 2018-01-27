@@ -4,7 +4,8 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
+//#include <unordered_map>
+#include <mutex>
 
 #include <arpa/inet.h>
 #include <cstring>
@@ -12,11 +13,15 @@
 #include <sys/select.h>
 #include <unistd.h>
 
+#include <tbb/concurrent_hash_map.h>
+#include <tbb/spin_mutex.h>
+
 #include "common.hpp"
 #include "dtls.hpp"
 #include "tap.hpp"
 
 using namespace std;
+// using namespace tbb;
 
 // Taken from:
 // https://stackoverflow.com/a/20602159
@@ -24,6 +29,15 @@ struct pairhash {
 public:
 	template <typename T, typename U> std::size_t operator()(const std::pair<T, U> &x) const {
 		return std::hash<T>()(x.first) ^ std::hash<U>()(x.second);
+	}
+
+	template <typename T, typename U> static std::size_t hash(const std::pair<T, U> &x) {
+		return std::hash<T>()(x.first) ^ std::hash<U>()(x.second);
+	}
+
+	template <typename T, typename U>
+	static bool equal(const std::pair<T, U> &x, const std::pair<T, U> &y) {
+		return (x.first == y.first) && (x.second == y.second);
 	}
 };
 
@@ -43,7 +57,20 @@ public:
 
 		return a + b;
 	}
+
+	static std::size_t hash(const std::array<uint8_t, 6> &x) {
+		machash m;
+		return m(x);
+	}
+
+	static bool equal(const std::array<uint8_t, 6> &x, const std::array<uint8_t, 6> &y) {
+		return !memcmp(x.data(), y.data(), 6);
+	}
 };
+
+using ipTable = tbb::concurrent_hash_map<std::pair<unsigned long, unsigned short>,
+	struct client *, pairhash>;
+using macTable = tbb::concurrent_hash_map<std::array<uint8_t, 6>, struct client *, machash>;
 
 static int stopFlag = 0;
 
@@ -57,13 +84,15 @@ struct client {
 	std::array<uint8_t, 6> mac;
 	uint32_t ip;
 	uint16_t port;
+	tbb::spin_mutex mtx;
 };
 
 int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
-	struct sockaddr_in *src_addr, TapDevice &tap,
-	std::unordered_map<std::array<uint8_t, 6>, struct client *, machash> &macToClient) {
+	struct sockaddr_in *src_addr, TapDevice &tap, macTable &macToClient) {
 
 	D(std::cout << "run handlePacket" << std::endl;)
+
+	std::lock_guard<tbb::spin_mutex> lckGuard(c->mtx);
 
 	if (BIO_write(c->conn.rbio, buf, recvBytes) != recvBytes) {
 		throw new std::runtime_error("handlePacket() BIO_write() failed");
@@ -124,6 +153,9 @@ int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
 };
 
 int handleTap(int fd, char *buf, int bufLen, int readLen, client *c) {
+
+	std::lock_guard<tbb::spin_mutex> lckGuard(c->mtx);
+
 	if (SSL_write(c->conn.ssl, buf, readLen) != readLen) {
 		throw new std::runtime_error("handleTap() SSL_write() failed");
 	}
@@ -174,11 +206,9 @@ int main(int argc, char **argv) {
 
 		std::cout << "bound socket" << std::endl;
 
-		std::unordered_map<std::pair<unsigned long, unsigned short>, struct client *,
-			pairhash>
-			ipToClient;
+		ipTable ipToClient;
 
-		std::unordered_map<std::array<uint8_t, 6>, struct client *, machash> macToClient;
+		macTable macToClient;
 
 		char buf[2048];
 
@@ -224,9 +254,8 @@ int main(int argc, char **argv) {
 				}
 
 				// Look up if there already exists a connection
-			conn_lockup:
-				auto conn_it = ipToClient.find({src_addr.sin_addr.s_addr, src_addr.sin_port});
-				if (conn_it == ipToClient.end()) {
+				ipTable::accessor connIt;
+				if (!ipToClient.find(connIt, {src_addr.sin_addr.s_addr, src_addr.sin_port})) {
 					std::cout << "Connection from new client" << std::endl;
 					struct client *c = new client();
 					memset(c, 0, sizeof(struct client));
@@ -234,33 +263,27 @@ int main(int argc, char **argv) {
 					c->ip = src_addr.sin_addr.s_addr;
 					c->port = src_addr.sin_port;
 
-					ipToClient.insert({{src_addr.sin_addr.s_addr, src_addr.sin_port}, c});
-					goto conn_lockup;
+					ipToClient.insert(
+						connIt, {{src_addr.sin_addr.s_addr, src_addr.sin_port}, c});
 				}
 
-				// Just double checking
-				if (conn_it == ipToClient.end()) {
-					throw new std::runtime_error("conn_it is invalid...");
-				}
-
-				if (handlePacket(fd, conn_it->second, buf, 2048, ret, &src_addr, tap,
+				if (handlePacket(fd, connIt->second, buf, 2048, ret, &src_addr, tap,
 						macToClient) == 1) {
-					struct client *c = conn_it->second;
-					ipToClient.erase(conn_it);
-					auto macIt = macToClient.find(c->mac);
-					if (macIt != macToClient.end()) {
-						macToClient.erase(macIt);
-					}
+					struct client *c = connIt->second;
+					ipToClient.erase(connIt);
+					macToClient.erase(c->mac);
+					c->mtx.lock();
+					delete (c);
 				}
 			} else if (FD_ISSET(tap.getFd(), &rfd)) {
 				// There is data on the TAP interface
 				std::array<uint8_t, 6> mac;
 				int readLen = tap.read(buf, 2048);
 				memcpy(mac.data(), buf, 6);
-				auto conn_it = macToClient.find(mac);
 
-				if (conn_it != macToClient.end()) {
-					if (handleTap(fd, buf, 2048, readLen, conn_it->second) == 0) {
+				macTable::accessor connIt;
+				if (macToClient.find(connIt, mac)) {
+					if (handleTap(fd, buf, 2048, readLen, connIt->second) == 0) {
 						throw new std::runtime_error("handleTap() didn't send any packets");
 					}
 				}
