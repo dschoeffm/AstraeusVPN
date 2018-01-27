@@ -31,7 +31,7 @@ TapDevice::TapDevice(std::string &devName) {
 	memset(&ifr, 0, sizeof(ifr));
 
 	// We want a tap interface without any added infos
-	ifr.ifr_flags = IFF_TAP | IFF_NO_PI;
+	ifr.ifr_flags = IFF_TAP | IFF_NO_PI | IFF_MULTI_QUEUE;
 
 	if (devName != "") {
 		strncpy(ifr.ifr_name, devName.c_str(), IFNAMSIZ);

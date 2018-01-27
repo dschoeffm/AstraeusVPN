@@ -2,10 +2,11 @@
 #include <cerrno>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
-//#include <unordered_map>
-#include <mutex>
+#include <thread>
 
 #include <arpa/inet.h>
 #include <cstring>
@@ -22,6 +23,8 @@
 
 using namespace std;
 // using namespace tbb;
+
+#define NUM_THREADS 8
 
 // Taken from:
 // https://stackoverflow.com/a/20602159
@@ -182,6 +185,67 @@ int handleTap(int fd, char *buf, int bufLen, int readLen, client *c) {
 	return packetCount;
 };
 
+void dtlsThread(
+	int fd, std::shared_ptr<TapDevice> tap, ipTable *ipToClient, macTable *macToClient) {
+	char buf[2048];
+	struct sockaddr_in src_addr;
+	socklen_t addrlen = sizeof(struct sockaddr_in);
+	SSL_CTX *ctx = DTLS::createServerCTX("server");
+
+	while (stopFlag == 0) {
+		int ret = recvfrom(fd, (void *)buf, 2048, 0, (struct sockaddr *)&src_addr, &addrlen);
+		if (ret < 0) {
+			if ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR)) {
+				continue;
+			} else {
+				throw new std::system_error(std::error_code(errno, std::generic_category()),
+					std::string("main() recvfrom() failed"));
+			}
+		} else {
+			D(std::cout << "received a packet" << std::endl;)
+		}
+
+		// Look up if there already exists a connection
+		ipTable::accessor connIt;
+		if (!ipToClient->find(connIt, {src_addr.sin_addr.s_addr, src_addr.sin_port})) {
+			std::cout << "Connection from new client" << std::endl;
+			struct client *c = new client();
+			memset(c, 0, sizeof(struct client));
+			c->conn = DTLS::createServerConn(ctx);
+			c->ip = src_addr.sin_addr.s_addr;
+			c->port = src_addr.sin_port;
+
+			ipToClient->insert(connIt, {{src_addr.sin_addr.s_addr, src_addr.sin_port}, c});
+		}
+
+		if (handlePacket(fd, connIt->second, buf, 2048, ret, &src_addr, *tap, *macToClient) ==
+			1) {
+			struct client *c = connIt->second;
+			ipToClient->erase(connIt);
+			macToClient->erase(c->mac);
+			c->mtx.lock();
+			delete (c);
+		}
+	}
+};
+
+void tapThread(int fd, std::shared_ptr<TapDevice> tap, macTable *macToClient) {
+	char buf[2048];
+
+	while (stopFlag == 0) {
+		std::array<uint8_t, 6> mac;
+		int readLen = tap->read(buf, 2048);
+		memcpy(mac.data(), buf, 6);
+
+		macTable::accessor connIt;
+		if (macToClient->find(connIt, mac)) {
+			if (handleTap(fd, buf, 2048, readLen, connIt->second) == 0) {
+				throw new std::runtime_error("handleTap() didn't send any packets");
+			}
+		}
+	}
+};
+
 int main(int argc, char **argv) {
 	try {
 		(void)argc;
@@ -189,108 +253,45 @@ int main(int argc, char **argv) {
 
 		signal(SIGINT, sigHandler);
 
-		// For now, just create a tap interface
-		std::string devName = "astraeus";
-		TapDevice tap(devName);
-
-		std::cout << "Create tap dev: " << devName << std::endl;
-
-		SSL_CTX *ctx = DTLS::createServerCTX("server");
-
-		// Create the server UDP listener socket
-		int fd = DTLS::bindSocket(4433);
-		struct timeval tv;
-		tv.tv_sec = 1;
-		tv.tv_usec = 0;
-		setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof(struct timeval));
-
-		std::cout << "bound socket" << std::endl;
-
+		int fds[NUM_THREADS / 2];
 		ipTable ipToClient;
-
 		macTable macToClient;
+		std::thread *tapThreads[NUM_THREADS / 2];
+		std::thread *dtlsThreads[NUM_THREADS / 2];
 
-		char buf[2048];
+		for (int i = 0; i < NUM_THREADS / 2; i++) {
 
-		fd_set rfd, rfds;
-		FD_ZERO(&rfds);
-		FD_SET(tap.getFd(), &rfds);
-		FD_SET(fd, &rfds);
-		int maxfd = max(fd, tap.getFd());
+			// For now, just create a tap interface
+			std::string devName = "astraeus";
+			auto tap = std::make_shared<TapDevice>(devName);
 
-		while (stopFlag == 0) {
-			struct sockaddr_in src_addr;
-			socklen_t addrlen = sizeof(struct sockaddr_in);
+			std::cout << "Create tap dev: " << devName << std::endl;
 
-			rfd = rfds;
+			// Create the server UDP listener socket
+			fds[i] = DTLS::bindSocket(4433);
+			struct timeval tv;
+			tv.tv_sec = 1;
+			tv.tv_usec = 0;
+			setsockopt(
+				fds[i], SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof(struct timeval));
 
-			// Call select and wait for something interesting to happen
-			int ret = select(maxfd + 1, &rfd, NULL, NULL, NULL);
-			if (0 > ret) {
-				if (errno == EINTR)
-					continue; // that's ok
+			std::cout << "bound socket" << std::endl;
 
-				throw new std::system_error(std::error_code(errno, std::generic_category()),
-					std::string("select() failed"));
-			}
-			if (0 == ret) {
-				continue;
-			}
-
-			if (FD_ISSET(fd, &rfd)) {
-				// A DTLS packet is ready to be received
-				ret = recvfrom(
-					fd, (void *)buf, 2048, 0, (struct sockaddr *)&src_addr, &addrlen);
-				if (ret < 0) {
-					if ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR)) {
-						continue;
-					} else {
-						throw new std::system_error(
-							std::error_code(errno, std::generic_category()),
-							std::string("main() recvfrom() failed"));
-					}
-				} else {
-					D(std::cout << "received a packet" << std::endl;)
-				}
-
-				// Look up if there already exists a connection
-				ipTable::accessor connIt;
-				if (!ipToClient.find(connIt, {src_addr.sin_addr.s_addr, src_addr.sin_port})) {
-					std::cout << "Connection from new client" << std::endl;
-					struct client *c = new client();
-					memset(c, 0, sizeof(struct client));
-					c->conn = DTLS::createServerConn(ctx);
-					c->ip = src_addr.sin_addr.s_addr;
-					c->port = src_addr.sin_port;
-
-					ipToClient.insert(
-						connIt, {{src_addr.sin_addr.s_addr, src_addr.sin_port}, c});
-				}
-
-				if (handlePacket(fd, connIt->second, buf, 2048, ret, &src_addr, tap,
-						macToClient) == 1) {
-					struct client *c = connIt->second;
-					ipToClient.erase(connIt);
-					macToClient.erase(c->mac);
-					c->mtx.lock();
-					delete (c);
-				}
-			} else if (FD_ISSET(tap.getFd(), &rfd)) {
-				// There is data on the TAP interface
-				std::array<uint8_t, 6> mac;
-				int readLen = tap.read(buf, 2048);
-				memcpy(mac.data(), buf, 6);
-
-				macTable::accessor connIt;
-				if (macToClient.find(connIt, mac)) {
-					if (handleTap(fd, buf, 2048, readLen, connIt->second) == 0) {
-						throw new std::runtime_error("handleTap() didn't send any packets");
-					}
-				}
-			}
+			tapThreads[i] = new std::thread(tapThread, fds[i], tap, &macToClient);
+			dtlsThreads[i] =
+				new std::thread(dtlsThread, fds[i], tap, &ipToClient, &macToClient);
 		}
 
-		close(fd);
+		for (int i = 0; i < NUM_THREADS / 2; i++) {
+			tapThreads[i]->join();
+			delete (tapThreads[i]);
+			dtlsThreads[i]->join();
+			delete (dtlsThreads[i]);
+		}
+
+		for (int i = 0; i < NUM_THREADS / 2; i++) {
+			close(fds[i]);
+		}
 
 		std::cout << "Server shutting down..." << std::endl;
 	} catch (std::exception *e) {

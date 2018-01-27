@@ -9,42 +9,6 @@
 using namespace DTLS;
 using namespace std;
 
-/*
-SSL_CTX *DTLS::createClientCTX() {
-
-	int result = 0;
-
-	// Create a new context using DTLS
-	// This should always use the highest possible version
-	SSL_CTX *ctx = SSL_CTX_new(DTLS_method());
-	if (ctx == nullptr) {
-		throw new std::runtime_error(
-			"DTLS::createClientCTX() SSL_CTX_new(DTLS_method()) failed");
-	}
-
-	// Set our supported ciphers
-	result = SSL_CTX_set_cipher_list(ctx, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
-	if (result != 1) {
-		throw new std::runtime_error(
-			"DTLS::createClientCTX() SSL_CTX_set_cipher_list() failed");
-	}
-
-	auto verifyFun = [](int ok, X509_STORE_CTX *ctx) {
-		(void)ok;
-		(void)ctx;
-		return 1;
-	};
-
-	// Accept every cert
-	SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, verifyFun);
-
-	// Do not query the BIO for an MTU
-	SSL_CTX_set_options(ctx, SSL_OP_NO_QUERY_MTU);
-
-	return ctx;
-};
-*/
-
 SSL_CTX *DTLS::createClientCTX() {
 	int result = 0;
 
@@ -199,6 +163,13 @@ int DTLS::bindSocket(int port) {
 	if (fd < 0) {
 		throw new std::system_error(std::error_code(errno, std::generic_category()),
 			std::string("DTLS::bindSocket() socket() failed"));
+	}
+
+	int optval = 1;
+	int ret = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+	if (ret != 0) {
+		throw new std::system_error(std::error_code(errno, std::generic_category()),
+			std::string("DTLS::bindSocket() setsockopt() failed"));
 	}
 
 	if (::bind(fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) < 0) {
