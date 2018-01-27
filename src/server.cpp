@@ -63,7 +63,7 @@ int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
 	struct sockaddr_in *src_addr, TapDevice &tap,
 	std::unordered_map<std::array<uint8_t, 6>, struct client *, machash> &macToClient) {
 
-	std::cout << "run handlePacket" << std::endl;
+	D(std::cout << "run handlePacket" << std::endl;)
 
 	if (BIO_write(c->conn.rbio, buf, recvBytes) != recvBytes) {
 		throw new std::runtime_error("handlePacket() BIO_write() failed");
@@ -87,7 +87,7 @@ int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
 				std::cout << "readLen=" << readLen << std::endl;
 				throw new std::runtime_error("handlePacket() tap.write() failed");
 			} else {
-				std::cout << "Written data to TAP" << std::endl;
+				D(std::cout << "Written data to TAP" << std::endl;)
 			}
 		}
 	} else {
@@ -109,7 +109,7 @@ int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
 			throw new std::system_error(std::error_code(errno, std::generic_category()),
 				std::string("handlePacket() sendto() failed"));
 		} else {
-			std::cout << "handlePacket() Send packet to peer" << std::endl;
+			D(std::cout << "handlePacket() Send packet to peer" << std::endl;)
 		}
 	}
 
@@ -124,8 +124,8 @@ int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
 };
 
 int handleTap(int fd, char *buf, int bufLen, int readLen, client *c) {
-	if (BIO_write(c->conn.rbio, buf, readLen) != readLen) {
-		throw new std::runtime_error("handleTap() BIO_write() failed");
+	if (SSL_write(c->conn.ssl, buf, readLen) != readLen) {
+		throw new std::runtime_error("handleTap() SSL_write() failed");
 	}
 	struct sockaddr_in dst_addr;
 	dst_addr.sin_family = AF_INET;
@@ -143,7 +143,7 @@ int handleTap(int fd, char *buf, int bufLen, int readLen, client *c) {
 			throw new std::system_error(std::error_code(errno, std::generic_category()),
 				std::string("handleTap() sendto() failed"));
 		} else {
-			std::cout << "handleTap() Send packet to peer" << std::endl;
+			D(std::cout << "handleTap() Send packet to peer" << std::endl;)
 			packetCount++;
 		}
 	}
@@ -220,7 +220,7 @@ int main(int argc, char **argv) {
 							std::string("main() recvfrom() failed"));
 					}
 				} else {
-					std::cout << "received a packet" << std::endl;
+					D(std::cout << "received a packet" << std::endl;)
 				}
 
 				// Look up if there already exists a connection

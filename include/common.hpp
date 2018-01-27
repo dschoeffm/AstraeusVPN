@@ -1,6 +1,12 @@
 #ifndef COMMON_HPP
 #define COMMON_HPP
 
+#ifdef DEBUG
+#define D(x) x
+#else
+#define D(x)
+#endif
+
 /*! Dump hex data
  *
  * \param data Pointer to the data to dump
