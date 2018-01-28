@@ -129,6 +129,13 @@ int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
 
 		// The return code is pretty useless, throw it away
 		SSL_accept(c->conn.ssl);
+
+		if (SSL_is_init_finished(c->conn.ssl)) {
+			std::cout << "handlePacket() Handshake finished" << std::endl;
+			std::cout << "Algorith: " << SSL_get_cipher_name(c->conn.ssl)
+					  << " Keylength: " << SSL_get_cipher_bits(c->conn.ssl, nullptr)
+					  << std::endl;
+		}
 	}
 
 	// Write out all data

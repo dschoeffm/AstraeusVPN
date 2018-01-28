@@ -74,6 +74,9 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 
 		if (SSL_is_init_finished(conn.ssl)) {
 			std::cout << "handlePacket() Handshake finished" << std::endl;
+			std::cout << "Algorith: " << SSL_get_cipher_name(conn.ssl)
+					  << " Keylength: " << SSL_get_cipher_bits(conn.ssl, nullptr)
+					  << std::endl;
 		}
 	}
 
