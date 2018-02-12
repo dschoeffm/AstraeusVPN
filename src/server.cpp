@@ -197,7 +197,14 @@ void dtlsThread(
 	char buf[2048];
 	struct sockaddr_in src_addr;
 	socklen_t addrlen = sizeof(struct sockaddr_in);
-	SSL_CTX *ctx = DTLS::createServerCTX("server");
+	SSL_CTX *ctx;
+
+	try {
+		ctx = DTLS::createServerCTX("server");
+	} catch (std::exception *e) {
+		std::cout << "Exception caught: " << e->what() << std::endl;
+		return;
+	}
 
 	while (stopFlag == 0) {
 		int ret = recvfrom(fd, (void *)buf, 2048, 0, (struct sockaddr *)&src_addr, &addrlen);
