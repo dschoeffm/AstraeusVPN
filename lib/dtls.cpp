@@ -35,6 +35,9 @@ SSL_CTX *DTLS::createClientCTX() {
 	// The client doesn't have to send it's certificate
 	SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, verifyFun);
 
+	// Do not query the BIO for an MTU
+	SSL_CTX_set_options(ctx, SSL_OP_NO_QUERY_MTU);
+
 	return ctx;
 }
 
@@ -92,6 +95,9 @@ SSL_CTX *DTLS::createServerCTX(const char *keyname) {
 		throw new std::runtime_error("DTLS::createServerCTX() private key check failed");
 	}
 
+	// Do not query the BIO for an MTU
+	SSL_CTX_set_options(ctx, SSL_OP_NO_QUERY_MTU);
+
 	return ctx;
 }
 
@@ -120,6 +126,8 @@ Connection DTLS::createServerConn(SSL_CTX *ctx) {
 	c.wbio = wbio;
 	c.rbio = rbio;
 
+	SSL_set_mtu(c.ssl, 1280);
+
 	return c;
 };
 
@@ -147,6 +155,8 @@ Connection DTLS::createClientConn(SSL_CTX *ctx) {
 	c.ssl = ssl;
 	c.wbio = wbio;
 	c.rbio = rbio;
+
+	SSL_set_mtu(c.ssl, 1280);
 
 	return c;
 };
