@@ -24,3 +24,17 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/tbb/libtbb.a
 add_custom_target(TBB DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tbb/libtbb.a
 	${CMAKE_CURRENT_SOURCE_DIR}/tbb/libtbb.a)
 
+###############################################################################
+
+add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/libsodium_install/lib64/libsodium.a
+	PRE_LINK
+	COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/libsodium/configure"
+	"--prefix=${CMAKE_CURRENT_SOURCE_DIR}/libsodium_install" "--enable-opt"
+	COMMAND $(MAKE)
+	COMMAND $(MAKE) "install"
+	COMMENT "Building libsodium"
+	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/libsodium/
+)
+
+add_custom_target(libsodium DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/libsodium_install/lib64/libsodium.a)
+

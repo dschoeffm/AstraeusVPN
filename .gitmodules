@@ -5,3 +5,7 @@
 [submodule "deps/tbb"]
 	path = deps/tbb
 	url = https://github.com/dschoeffm/tbb.git
+[submodule "deps/libsodium"]
+	path = deps/libsodium
+	url = https://github.com/jedisct1/libsodium.git
+	branch = stable
