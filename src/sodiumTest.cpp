@@ -32,6 +32,29 @@ void testChaCha20() {
 	assert(memcmp(testStr, testStrDec, sizeof(testStr)) == 0);
 };
 
+void testChaCha20Inplace() {
+	unsigned char testStr[20 + crypto_aead_chacha20poly1305_IETF_ABYTES];
+	strcpy(reinterpret_cast<char *>(testStr), "This is a test");
+	unsigned char addStr[] = "ADD";
+
+	uint8_t nonce[crypto_aead_chacha20poly1305_IETF_NPUBBYTES];
+	uint8_t key[crypto_aead_chacha20poly1305_IETF_KEYBYTES];
+	unsigned long long ciphertext_len;
+	unsigned long long message_len;
+
+	crypto_aead_chacha20poly1305_ietf_keygen(key);
+	randombytes_buf(nonce, sizeof(nonce));
+
+	crypto_aead_chacha20poly1305_ietf_encrypt(testStr, &ciphertext_len, testStr,
+		sizeof(testStr), addStr, sizeof(addStr), NULL, nonce, key);
+
+	int ret = crypto_aead_chacha20poly1305_ietf_decrypt(testStr, &message_len, NULL, testStr,
+		ciphertext_len, addStr, sizeof(addStr), nonce, key);
+
+	assert(ret == 0);
+	assert(strcmp(reinterpret_cast<char *>(testStr), "This is a test") == 0);
+};
+
 void testECDH() {
 
 	unsigned char client_pk[crypto_kx_PUBLICKEYBYTES], client_sk[crypto_kx_SECRETKEYBYTES];
@@ -81,6 +104,9 @@ int main(int argc, char **argv) {
 
 	testChaCha20();
 	std::cout << "[OK] ChaCha20" << std::endl;
+
+	testChaCha20Inplace();
+	std::cout << "[OK] ChaCha20Inplace" << std::endl;
 
 	testECDH();
 	std::cout << "[OK] ECDH" << std::endl;
