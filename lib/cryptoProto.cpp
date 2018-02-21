@@ -13,7 +13,6 @@
 using namespace AstraeusProto;
 
 void AstraeusProto::fillInitMsg(struct initMsg *msg, protoHandle &handle) {
-	crypto_kx_keypair(handle.ecdhPub, handle.ecdhSec);
 
 	memcpy(msg->ecdhe, handle.ecdhPub, crypto_kx_PUBLICKEYBYTES);
 	randombytes_buf(msg->nonce, sizeof(msg->nonce));
@@ -27,7 +26,7 @@ void AstraeusProto::fillInitMsg(struct initMsg *msg, protoHandle &handle) {
 	// handle.type = protoHandle::INIT;
 };
 
-void AstraeusProto::handleInitMsg(struct initMsg *msg, protoHandle &handle) {
+void AstraeusProto::handleInitMsg(struct initMsg *msg, protoHandle &handle, bool client) {
 	if (handle.type != protoHandle::INIT) {
 		throw new std::runtime_error("handleInitMsg() current state is not init");
 	}
@@ -36,11 +35,29 @@ void AstraeusProto::handleInitMsg(struct initMsg *msg, protoHandle &handle) {
 		throw new std::runtime_error("handleInitMsg() msg is not init");
 	}
 
+	D(std::cout << std::endl
+				<< "AstraeusProto::handleInitMsg() own ecdh public key:" << std::endl;)
+	D(hexdump(&handle.ecdhPub, sizeof(handle.ecdhPub));)
+	D(std::cout << "AstraeusProto::handleInitMsg() peer ecdh public key:" << std::endl;)
+	D(hexdump(msg->ecdhe, sizeof(msg->ecdhe));)
+
 	// Create the session keys
-	if (crypto_kx_client_session_keys(
-			handle.rxKey, handle.txKey, handle.ecdhPub, handle.ecdhSec, msg->ecdhe) != 0) {
-		throw new std::runtime_error("handleInitMsg() key exchange failed");
+	if (client) {
+		if (crypto_kx_client_session_keys(handle.rxKey, handle.txKey, handle.ecdhPub,
+				handle.ecdhSec, msg->ecdhe) != 0) {
+			throw new std::runtime_error("handleInitMsg() key exchange failed");
+		}
+	} else {
+		if (crypto_kx_server_session_keys(handle.rxKey, handle.txKey, handle.ecdhPub,
+				handle.ecdhSec, msg->ecdhe) != 0) {
+			throw new std::runtime_error("handleInitMsg() key exchange failed");
+		}
 	}
+
+	D(std::cout << "AstraeusProto::handleInitMsg() own rx key:" << std::endl;)
+	D(hexdump(&handle.rxKey, sizeof(handle.rxKey));)
+	D(std::cout << "AstraeusProto::handleInitMsg() own tx key:" << std::endl;)
+	D(hexdump(&handle.txKey, sizeof(handle.txKey));)
 
 	memcpy(handle.peerEcdsaPub, msg->ecdsa, sizeof(handle.peerEcdsaPub));
 	memcpy(handle.rxNonce, msg->nonce, sizeof(handle.rxNonce));
@@ -64,7 +81,7 @@ void AstraeusProto::fillAuthMsg(struct authMsg *msg, protoHandle &handle) {
 	crypto_sign_detached(msg->sig, NULL, reinterpret_cast<uint8_t *>(&handle.sigHeader),
 		sizeof(handle.sigHeader), handle.ident->secKey);
 
-	D(std::cout << "fillAuthMsg() Signature public key:" << std::endl;)
+	D(std::cout << std::endl << "fillAuthMsg() Signature public key:" << std::endl;)
 	D(hexdump(handle.ident->pubKey, sizeof(handle.ident->pubKey));)
 
 	D(std::cout << "fillAuthMsg() Signature in message:" << std::endl;)
@@ -75,9 +92,6 @@ void AstraeusProto::fillAuthMsg(struct authMsg *msg, protoHandle &handle) {
 
 	if (crypto_sign_verify_detached(msg->sig, reinterpret_cast<uint8_t *>(&handle.sigHeader),
 			sizeof(handle.sigHeader), handle.ident->pubKey) != 0) {
-		D(std::cout << "fillAuthMsg() Signature secret key:" << std::endl;)
-		D(hexdump(handle.ident->pubKey, sizeof(handle.ident->secKey));)
-
 		throw new std::runtime_error("fillAuthMsg() own signature verification failed");
 	}
 };
@@ -107,12 +121,6 @@ void AstraeusProto::handleAuthMsg(struct authMsg *msg, protoHandle &handle) {
 	}
 
 	assert(crypto_aead_chacha20poly1305_IETF_KEYBYTES == crypto_kx_SESSIONKEYBYTES);
-
-	ret = crypto_kx_client_session_keys(
-		handle.rxKey, handle.txKey, handle.ecdhPub, handle.ecdhSec, handle.peerEcdsaPub);
-	if (ret != 0) {
-		throw new std::runtime_error("AstraeusProto::verifyAuthMsg() Key exchange failed");
-	}
 
 	memset(handle.rxNonce, 0, sizeof(handle.rxNonce));
 	memset(handle.txNonce, 0, sizeof(handle.txNonce));
@@ -157,6 +165,8 @@ void AstraeusProto::encryptTunnelMsg(uint8_t *msgIn, unsigned int msgInLen, uint
 	unsigned int &msgOutLen, protoHandle &handle) {
 	int ret;
 
+	sodium_increment(handle.txNonce, sizeof(handle.txNonce));
+
 	tunnelMsg *header = reinterpret_cast<tunnelMsg *>(msgOut);
 	header->type = tunnelMsg::tunnelMsgType;
 
@@ -171,14 +181,12 @@ void AstraeusProto::encryptTunnelMsg(uint8_t *msgIn, unsigned int msgInLen, uint
 		throw new std::runtime_error("AstraeusProto::encryptTunnelMsg() encryption failed");
 	}
 	msgOutLen = msgInLen + sizeof(tunnelMsg);
-
-	sodium_increment(handle.txNonce, sizeof(handle.txNonce));
 };
 
 int AstraeusProto::handleHandshakeServer(protoHandle &handle, uint8_t *msg, int &sendCount) {
 	switch (handle.type) {
 	case protoHandle::INIT:
-		handleInitMsg(reinterpret_cast<initMsg *>(msg), handle);
+		handleInitMsg(reinterpret_cast<initMsg *>(msg), handle, false);
 		memcpy(handle.sigHeader.ecdheInitiator, reinterpret_cast<initMsg *>(msg)->ecdhe,
 			sizeof(handle.sigHeader.ecdheInitiator));
 		memcpy(handle.sigHeader.ecdsaInitiator, reinterpret_cast<initMsg *>(msg)->ecdsa,
@@ -221,7 +229,7 @@ int AstraeusProto::handleHandshakeServer(protoHandle &handle, uint8_t *msg, int 
 int AstraeusProto::handleHandshakeClient(protoHandle &handle, uint8_t *msg, int &sendCount) {
 	switch (handle.type) {
 	case protoHandle::INIT:
-		handleInitMsg(reinterpret_cast<initMsg *>(msg), handle);
+		handleInitMsg(reinterpret_cast<initMsg *>(msg), handle, true);
 		memcpy(handle.sigHeader.ecdheResponder, reinterpret_cast<initMsg *>(msg)->ecdhe,
 			sizeof(handle.sigHeader.ecdheResponder));
 		memcpy(handle.sigHeader.ecdsaResponder, reinterpret_cast<initMsg *>(msg)->ecdsa,
@@ -258,8 +266,8 @@ void AstraeusProto::generateIdentity(identityHandle &ident) {
 };
 
 int AstraeusProto::generateInit(identityHandle &ident, protoHandle &handle, uint8_t *msg) {
-	memset(&handle, 0, sizeof(protoHandle));
-	handle.ident = &ident;
+	generateHandle(ident, handle);
+
 	fillInitMsg(reinterpret_cast<initMsg *>(msg), handle);
 	handle.type = protoHandle::INIT;
 	memcpy(handle.sigHeader.ecdheInitiator, reinterpret_cast<initMsg *>(msg)->ecdhe,
@@ -275,6 +283,7 @@ int AstraeusProto::generateInit(identityHandle &ident, protoHandle &handle, uint
 void AstraeusProto::generateHandle(identityHandle &ident, protoHandle &handle) {
 	memset(&handle, 0, sizeof(protoHandle));
 	handle.ident = &ident;
+	crypto_kx_keypair(handle.ecdhPub, handle.ecdhSec);
 };
 
 int AstraeusProto::bindSocket(int port) {

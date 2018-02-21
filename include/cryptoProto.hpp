@@ -62,7 +62,7 @@ struct protoHandle {
 };
 
 void fillInitMsg(struct initMsg *msg, protoHandle &handle);
-void handleInitMsg(struct initMsg *msg, protoHandle &handle);
+void handleInitMsg(struct initMsg *msg, protoHandle &handle, bool client);
 
 void fillAuthMsg(struct authMsg *msg, protoHandle &handle);
 void handleAuthMsg(struct authMsg *msg, protoHandle &handle);
