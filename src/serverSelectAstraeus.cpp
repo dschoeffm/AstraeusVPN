@@ -192,7 +192,7 @@ int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
 		decryptTunnelMsg(
 			reinterpret_cast<uint8_t *>(buf), recvBytes, outBuf, outBufLen, c->handle);
 		int writeLen = tap.write(outBuf, outBufLen);
-		memcpy(c->mac.data(), buf + 6, 6);
+		memcpy(c->mac.data(), outBuf + 6, 6);
 		macToClient.insert({c->mac, c});
 
 		if (writeLen < 0) {
