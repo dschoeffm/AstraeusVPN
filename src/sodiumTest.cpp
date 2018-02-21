@@ -98,6 +98,34 @@ void testECDSA() {
 	assert(ret == 0);
 };
 
+void testECDSAMultiPart() {
+
+	unsigned char msg1[] = "this is a test";
+	unsigned char msg2[] = "this is another test";
+
+	unsigned char pk[crypto_sign_PUBLICKEYBYTES];
+	unsigned char sk[crypto_sign_SECRETKEYBYTES];
+	unsigned char sig[crypto_sign_BYTES];
+	int ret;
+
+	ret = crypto_sign_keypair(pk, sk);
+	assert(ret == 0);
+
+	crypto_sign_state state;
+	crypto_sign_update(&state, msg1, sizeof(msg1));
+	crypto_sign_update(&state, msg2, sizeof(msg2));
+
+	crypto_sign_final_create(&state, sig, NULL, sk);
+
+	crypto_sign_state stateVerify;
+	crypto_sign_update(&stateVerify, msg1, sizeof(msg1));
+	crypto_sign_update(&stateVerify, msg2, sizeof(msg2));
+
+	ret = crypto_sign_final_verify(&stateVerify, sig, pk);
+
+	assert(ret == 0);
+};
+
 int main(int argc, char **argv) {
 	(void)argc;
 	(void)argv;
@@ -113,6 +141,9 @@ int main(int argc, char **argv) {
 
 	testECDSA();
 	std::cout << "[OK] ECDSA" << std::endl;
+
+	testECDSAMultiPart();
+	std::cout << "[OK] ECDSA multipart" << std::endl;
 
 	std::cout << "All tests successful" << std::endl;
 	return 0;
