@@ -5,6 +5,8 @@
 
 #include "sodium.h"
 
+#include "common.hpp"
+
 void testChaCha20() {
 	char testStr[] = "This is a test";
 	char testStrDec[sizeof(testStr)];
@@ -65,6 +67,15 @@ void testECDH() {
 
 	crypto_kx_keypair(client_pk, client_sk);
 	crypto_kx_keypair(server_pk, server_sk);
+
+	D(std::cout << "client public key:" << std::endl;)
+	D(hexdump(client_pk, crypto_kx_PUBLICKEYBYTES);)
+	D(std::cout << "client secret key:" << std::endl;)
+	D(hexdump(client_sk, crypto_kx_SECRETKEYBYTES);)
+	D(std::cout << "server public key:" << std::endl;)
+	D(hexdump(server_pk, crypto_kx_PUBLICKEYBYTES);)
+	D(std::cout << "server secret key:" << std::endl;)
+	D(hexdump(server_sk, crypto_kx_SECRETKEYBYTES);)
 
 	int ret;
 	ret =
