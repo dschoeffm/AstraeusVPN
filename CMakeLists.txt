@@ -23,6 +23,7 @@ LINK_DIRECTORIES(
 	${CMAKE_CURRENT_SOURCE_DIR}/deps/openssl
 	${CMAKE_CURRENT_SOURCE_DIR}/deps/tbb
 	${CMAKE_CURRENT_SOURCE_DIR}/deps/libsodium_install/lib64
+	${CMAKE_CURRENT_SOURCE_DIR}/deps/libsodium_install/lib
 )
 INCLUDE_DIRECTORIES(
 	${CMAKE_CURRENT_SOURCE_DIR}/deps/openssl/include/
