@@ -277,7 +277,7 @@ void selectThread(
 					} else {
 						throw new std::system_error(
 							std::error_code(errno, std::generic_category()),
-							std::string("main() recvfrom() failed"));
+							std::string("selectThread() recvfrom() failed"));
 					}
 				} else {
 					D(std::cout << "received a packet" << std::endl;)
@@ -349,7 +349,7 @@ int main(int argc, char **argv) {
 			std::cout << "Create tap dev: " << devName << std::endl;
 
 			// Create the server UDP listener socket
-			fds[i] = DTLS::bindSocket(4433);
+			fds[i] = AstraeusProto::bindSocket(4433);
 			struct timeval tv;
 			tv.tv_sec = 1;
 			tv.tv_usec = 0;

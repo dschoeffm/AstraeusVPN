@@ -1,6 +1,10 @@
 #include <cassert>
 #include <cstring>
 #include <stdexcept>
+#include <system_error>
+
+#include <arpa/inet.h>
+#include <sys/socket.h>
 
 #include "cryptoProto.hpp"
 
@@ -199,8 +203,50 @@ void AstraeusProto::generateIdentity(identityHandle &ident) {
 	crypto_sign_keypair(ident.pubKey, ident.secKey);
 };
 
-void AstraeusProto::generateInit(identityHandle &ident, protoHandle &handle, uint8_t *msg) {
+int AstraeusProto::generateInit(identityHandle &ident, protoHandle &handle, uint8_t *msg) {
 	memset(&handle, 0, sizeof(protoHandle));
 	handle.ident = &ident;
 	fillInitMsg(reinterpret_cast<initMsg *>(msg), handle);
+	return sizeof(initMsg);
+};
+
+int AstraeusProto::bindSocket(int port) {
+	int fd;
+	struct sockaddr_in addr;
+
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(port);
+	addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+	fd = socket(AF_INET, SOCK_DGRAM, 0);
+	if (fd < 0) {
+		throw new std::system_error(std::error_code(errno, std::generic_category()),
+			std::string("AstraeusProto::bindSocket() socket() failed"));
+	}
+
+	int optval = 1;
+	int ret = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+	if (ret != 0) {
+		throw new std::system_error(std::error_code(errno, std::generic_category()),
+			std::string("AstraeusProto::bindSocket() setsockopt() failed"));
+	}
+
+	if (::bind(fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) < 0) {
+		throw new std::system_error(std::error_code(errno, std::generic_category()),
+			std::string("AstraeusProto::bindSocket() bind() failed"));
+	}
+
+	return fd;
+};
+
+int AstraeusProto::createSocket() {
+	int fd;
+
+	fd = socket(AF_INET, SOCK_DGRAM, 0);
+	if (fd < 0) {
+		throw new std::system_error(std::error_code(errno, std::generic_category()),
+			std::string("AstraeusProto::bindSocket() socket() failed"));
+	}
+
+	return fd;
 };

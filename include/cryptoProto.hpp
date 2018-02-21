@@ -66,12 +66,23 @@ void generateIdentity(identityHandle &ident);
 
 // Generate Init message and protoHandle
 // Will write init msg into "msg", and handle into "handle"
-void generateInit(identityHandle &ident, protoHandle &handle, uint8_t *msg);
+int generateInit(identityHandle &ident, protoHandle &handle, uint8_t *msg);
 
 void decryptTunnelMsg(uint8_t *msgIn, unsigned int msgInLen, uint8_t *msgOut,
 	unsigned int &msgOutLen, protoHandle &handle);
 void encryptTunnelMsg(uint8_t *msgIn, unsigned int msgInLen, uint8_t *msgOut,
 	unsigned int &msgOutLen, protoHandle &handle);
+
+int bindSocket(int port);
+int createSocket();
+
+bool inline handshakeOngoing(protoHandle &handle) {
+	if (handle.type == protoHandle::TUNNEL) {
+		return false;
+	} else {
+		return true;
+	}
+}
 
 }; // namespace AstraeusProto
 
