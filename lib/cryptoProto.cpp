@@ -127,6 +127,8 @@ void AstraeusProto::decryptTunnelMsg(uint8_t *msgIn, unsigned int msgInLen, uint
 	tunnelMsg *header = reinterpret_cast<tunnelMsg *>(msgIn);
 
 	if (header->type != AstraeusProto::tunnelMsg::tunnelMsgType) {
+		std::cout << "AstraeusProto::decryptTunnelMsg() type="
+				  << static_cast<int>(header->type) << std::endl;
 		throw new std::runtime_error("AstraeusProto::decryptTunnelMsg() Msg type is wrong");
 	}
 
@@ -152,6 +154,7 @@ void AstraeusProto::encryptTunnelMsg(uint8_t *msgIn, unsigned int msgInLen, uint
 	int ret;
 
 	tunnelMsg *header = reinterpret_cast<tunnelMsg *>(msgOut);
+	header->type = tunnelMsg::tunnelMsgType;
 
 	uint8_t *payload = msgOut + sizeof(tunnelMsg);
 	memcpy(header->nonce, handle.txNonce, sizeof(header->nonce));
