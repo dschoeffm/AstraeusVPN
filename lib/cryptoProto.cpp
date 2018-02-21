@@ -133,6 +133,10 @@ void AstraeusProto::decryptTunnelMsg(uint8_t *msgIn, unsigned int msgInLen, uint
 	}
 
 	if (sodium_compare(handle.rxNonce, header->nonce, sizeof(handle.rxNonce)) != -1) {
+		std::cout << "AstraeusProto::decryptTunnelMsg() saved nonce:" << std::endl;
+		hexdump(handle.rxNonce, sizeof(handle.rxNonce));
+		std::cout << "AstraeusProto::decryptTunnelMsg() received nonce:" << std::endl;
+		hexdump(header->nonce, sizeof(header->nonce));
 		throw new std::runtime_error("AstraeusProto::decryptTunnelMsg() Unexpected nonce");
 	}
 
