@@ -6,6 +6,18 @@
 #include "sodium.h"
 
 namespace AstraeusProto {
+
+#define ASTRAEUSPROTONONCELEN 16
+
+struct sigHeader {
+	uint8_t nonceInitiator[ASTRAEUSPROTONONCELEN];
+	uint8_t nonceResponder[ASTRAEUSPROTONONCELEN];
+	uint8_t ecdsaInitiator[crypto_sign_PUBLICKEYBYTES];
+	uint8_t ecdsaResponder[crypto_sign_PUBLICKEYBYTES];
+	uint8_t ecdheInitiator[crypto_kx_PUBLICKEYBYTES];
+	uint8_t ecdheResponder[crypto_kx_PUBLICKEYBYTES];
+} __attribute__((packed));
+
 struct initMsg {
 	static constexpr uint8_t initMsgType = 0;
 
@@ -36,8 +48,7 @@ struct identityHandle {
 };
 
 struct protoHandle {
-	AstraeusProto::initMsg initiator;
-	AstraeusProto::initMsg responder;
+	AstraeusProto::sigHeader sigHeader;
 	uint8_t txKey[crypto_aead_chacha20poly1305_IETF_KEYBYTES];
 	uint8_t rxKey[crypto_aead_chacha20poly1305_IETF_KEYBYTES];
 	uint8_t txNonce[crypto_aead_chacha20poly1305_IETF_NPUBBYTES];
@@ -67,6 +78,7 @@ void generateIdentity(identityHandle &ident);
 // Generate Init message and protoHandle
 // Will write init msg into "msg", and handle into "handle"
 int generateInit(identityHandle &ident, protoHandle &handle, uint8_t *msg);
+void generateHandle(identityHandle &ident, protoHandle &handle);
 
 void decryptTunnelMsg(uint8_t *msgIn, unsigned int msgInLen, uint8_t *msgOut,
 	unsigned int &msgOutLen, protoHandle &handle);

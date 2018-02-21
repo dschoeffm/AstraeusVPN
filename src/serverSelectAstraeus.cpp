@@ -174,9 +174,12 @@ int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
 		int sendCount;
 		int ret = AstraeusProto::handleHandshakeServer(
 			c->handle, reinterpret_cast<uint8_t *>(buf), sendCount);
+
 		if (ret == 1) {
 			c->handshake = false;
-		} else {
+		}
+
+		if (sendCount > 0) {
 			int sendBytes = sendto(fd, buf, sendCount, 0, (struct sockaddr *)src_addr,
 				sizeof(struct sockaddr_in));
 			if (sendBytes != sendCount) {
@@ -230,8 +233,8 @@ int handleTap(int fd, char *buf, int bufLen, int readLen, client *c) {
 	return 0;
 };
 
-void selectThread(
-	int fd, std::shared_ptr<TapDevice> tap, ipTable *ipToClient, macTable *macToClient) {
+void selectThread(int fd, std::shared_ptr<TapDevice> tap, ipTable *ipToClient,
+	macTable *macToClient, AstraeusProto::identityHandle *ident) {
 	fd_set rfd, rfds;
 	FD_ZERO(&rfds);
 	FD_SET(tap->getFd(), &rfds);
@@ -289,6 +292,7 @@ void selectThread(
 					std::cout << "Connection from new client" << std::endl;
 					struct client *c = new client();
 					memset(c, 0, sizeof(struct client));
+					AstraeusProto::generateHandle(*ident, c->handle);
 					c->handshake = true;
 					c->ip = src_addr.sin_addr.s_addr;
 					c->port = src_addr.sin_port;
@@ -340,6 +344,9 @@ int main(int argc, char **argv) {
 		macTable macToClient;
 		std::thread *selectThreads[NUM_THREADS];
 
+		AstraeusProto::identityHandle ident;
+		AstraeusProto::generateIdentity(ident);
+
 		for (int i = 0; i < NUM_THREADS; i++) {
 
 			// For now, just create a tap interface
@@ -359,8 +366,8 @@ int main(int argc, char **argv) {
 			std::cout << "bound socket" << std::endl;
 
 			try {
-				selectThreads[i] =
-					new std::thread(selectThread, fds[i], tap, &ipToClient, &macToClient);
+				selectThreads[i] = new std::thread(
+					selectThread, fds[i], tap, &ipToClient, &macToClient, &ident);
 			} catch (std::exception *e) {
 				cout << "Caught exception: " << e->what() << std::endl;
 				exit(1);

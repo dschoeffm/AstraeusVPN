@@ -1,11 +1,13 @@
 #include <cassert>
 #include <cstring>
+#include <iostream>
 #include <stdexcept>
 #include <system_error>
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
 
+#include "common.hpp"
 #include "cryptoProto.hpp"
 
 using namespace AstraeusProto;
@@ -19,7 +21,10 @@ void AstraeusProto::fillInitMsg(struct initMsg *msg, protoHandle &handle) {
 	msg->type = AstraeusProto::initMsg::initMsgType;
 	memcpy(msg->ecdsa, handle.ident->pubKey, sizeof(msg->ecdsa));
 
-	handle.type = protoHandle::INIT;
+	D(std::cout << "fillInitMsg() init msg:" << std::endl;)
+	D(hexdump(msg, sizeof(struct initMsg));)
+
+	// handle.type = protoHandle::INIT;
 };
 
 void AstraeusProto::handleInitMsg(struct initMsg *msg, protoHandle &handle) {
@@ -40,7 +45,7 @@ void AstraeusProto::handleInitMsg(struct initMsg *msg, protoHandle &handle) {
 	memcpy(handle.peerEcdsaPub, msg->ecdsa, sizeof(handle.peerEcdsaPub));
 	memcpy(handle.rxNonce, msg->nonce, sizeof(handle.rxNonce));
 
-	handle.type = protoHandle::AUTH;
+	// handle.type = protoHandle::AUTH;
 
 	/*
 	 * XXX At this point, a peer would think about accepting the ECDSA key
@@ -56,13 +61,25 @@ void AstraeusProto::fillAuthMsg(struct authMsg *msg, protoHandle &handle) {
 
 	msg->type = AstraeusProto::authMsg::authMsgType;
 
-	crypto_sign_state state;
-	crypto_sign_update(
-		&state, reinterpret_cast<uint8_t *>(&handle.initiator), sizeof(struct initMsg));
-	crypto_sign_update(
-		&state, reinterpret_cast<uint8_t *>(&handle.responder), sizeof(struct initMsg));
+	crypto_sign_detached(msg->sig, NULL, reinterpret_cast<uint8_t *>(&handle.sigHeader),
+		sizeof(handle.sigHeader), handle.ident->secKey);
 
-	crypto_sign_final_create(&state, msg->sig, NULL, handle.ident->secKey);
+	D(std::cout << "fillAuthMsg() Signature public key:" << std::endl;)
+	D(hexdump(handle.ident->pubKey, sizeof(handle.ident->pubKey));)
+
+	D(std::cout << "fillAuthMsg() Signature in message:" << std::endl;)
+	D(hexdump(msg->sig, sizeof(msg->sig));)
+
+	D(std::cout << "fillAuthMsg() auth msg:" << std::endl;)
+	D(hexdump(msg, sizeof(struct authMsg));)
+
+	if (crypto_sign_verify_detached(msg->sig, reinterpret_cast<uint8_t *>(&handle.sigHeader),
+			sizeof(handle.sigHeader), handle.ident->pubKey) != 0) {
+		D(std::cout << "fillAuthMsg() Signature secret key:" << std::endl;)
+		D(hexdump(handle.ident->pubKey, sizeof(handle.ident->secKey));)
+
+		throw new std::runtime_error("fillAuthMsg() own signature verification failed");
+	}
 };
 
 void AstraeusProto::handleAuthMsg(struct authMsg *msg, protoHandle &handle) {
@@ -74,16 +91,19 @@ void AstraeusProto::handleAuthMsg(struct authMsg *msg, protoHandle &handle) {
 		throw new std::runtime_error("handleAuthMsg() msg is not auth");
 	}
 
-	crypto_sign_state state;
-	crypto_sign_update(
-		&state, reinterpret_cast<uint8_t *>(&handle.initiator), sizeof(struct initMsg));
-	crypto_sign_update(
-		&state, reinterpret_cast<uint8_t *>(&handle.responder), sizeof(struct initMsg));
+	int ret =
+		crypto_sign_verify_detached(msg->sig, reinterpret_cast<uint8_t *>(&handle.sigHeader),
+			sizeof(handle.sigHeader), handle.peerEcdsaPub);
 
-	int ret = crypto_sign_final_verify(&state, msg->sig, handle.peerEcdsaPub);
 	if (ret != 0) {
+		std::cout << "handleAuthMsg() Signature error" << std::endl;
+		std::cout << "handleAuthMsg() Signature public key:" << std::endl;
+		hexdump(&handle.peerEcdsaPub, sizeof(handle.peerEcdsaPub));
+		std::cout << "handleAuthMsg() Signature header:" << std::endl;
+		hexdump(&handle.sigHeader, sizeof(handle.sigHeader));
+
 		throw new std::runtime_error(
-			"AstraeusProto::verifyAuthMsg() Signature doesn't match");
+			"AstraeusProto::handleAuthMsg() Signature doesn't match");
 	}
 
 	assert(crypto_aead_chacha20poly1305_IETF_KEYBYTES == crypto_kx_SESSIONKEYBYTES);
@@ -97,7 +117,7 @@ void AstraeusProto::handleAuthMsg(struct authMsg *msg, protoHandle &handle) {
 	memset(handle.rxNonce, 0, sizeof(handle.rxNonce));
 	memset(handle.txNonce, 0, sizeof(handle.txNonce));
 
-	handle.type = protoHandle::TUNNEL;
+	// handle.type = protoHandle::TUNNEL;
 };
 
 void AstraeusProto::decryptTunnelMsg(uint8_t *msgIn, unsigned int msgInLen, uint8_t *msgOut,
@@ -152,13 +172,30 @@ int AstraeusProto::handleHandshakeServer(protoHandle &handle, uint8_t *msg, int 
 	switch (handle.type) {
 	case protoHandle::INIT:
 		handleInitMsg(reinterpret_cast<initMsg *>(msg), handle);
+		memcpy(handle.sigHeader.ecdheInitiator, reinterpret_cast<initMsg *>(msg)->ecdhe,
+			sizeof(handle.sigHeader.ecdheInitiator));
+		memcpy(handle.sigHeader.ecdsaInitiator, reinterpret_cast<initMsg *>(msg)->ecdsa,
+			sizeof(handle.sigHeader.ecdsaInitiator));
+		memcpy(handle.sigHeader.nonceInitiator, reinterpret_cast<initMsg *>(msg)->nonce,
+			sizeof(handle.sigHeader.nonceInitiator));
+
 		fillInitMsg(reinterpret_cast<initMsg *>(msg), handle);
+		memcpy(handle.sigHeader.ecdheResponder, reinterpret_cast<initMsg *>(msg)->ecdhe,
+			sizeof(handle.sigHeader.ecdheResponder));
+		memcpy(handle.sigHeader.ecdsaResponder, reinterpret_cast<initMsg *>(msg)->ecdsa,
+			sizeof(handle.sigHeader.ecdsaResponder));
+		memcpy(handle.sigHeader.nonceResponder, reinterpret_cast<initMsg *>(msg)->nonce,
+			sizeof(handle.sigHeader.nonceResponder));
+
 		sendCount = sizeof(initMsg);
+		handle.type = protoHandle::AUTH;
 		break;
 
 	case protoHandle::AUTH:
 		handleAuthMsg(reinterpret_cast<authMsg *>(msg), handle);
 		fillAuthMsg(reinterpret_cast<authMsg *>(msg), handle);
+		handle.type = protoHandle::TUNNEL;
+
 		sendCount = sizeof(authMsg);
 		break;
 
@@ -178,6 +215,15 @@ int AstraeusProto::handleHandshakeClient(protoHandle &handle, uint8_t *msg, int 
 	switch (handle.type) {
 	case protoHandle::INIT:
 		handleInitMsg(reinterpret_cast<initMsg *>(msg), handle);
+		memcpy(handle.sigHeader.ecdheResponder, reinterpret_cast<initMsg *>(msg)->ecdhe,
+			sizeof(handle.sigHeader.ecdheResponder));
+		memcpy(handle.sigHeader.ecdsaResponder, reinterpret_cast<initMsg *>(msg)->ecdsa,
+			sizeof(handle.sigHeader.ecdsaResponder));
+		memcpy(handle.sigHeader.nonceResponder, reinterpret_cast<initMsg *>(msg)->nonce,
+			sizeof(handle.sigHeader.nonceResponder));
+
+		handle.type = protoHandle::AUTH;
+
 		fillAuthMsg(reinterpret_cast<authMsg *>(msg), handle);
 		sendCount = sizeof(authMsg);
 		break;
@@ -185,6 +231,7 @@ int AstraeusProto::handleHandshakeClient(protoHandle &handle, uint8_t *msg, int 
 	case protoHandle::AUTH:
 		handleAuthMsg(reinterpret_cast<authMsg *>(msg), handle);
 		sendCount = 0;
+		handle.type = protoHandle::TUNNEL;
 		break;
 
 	default:
@@ -207,7 +254,20 @@ int AstraeusProto::generateInit(identityHandle &ident, protoHandle &handle, uint
 	memset(&handle, 0, sizeof(protoHandle));
 	handle.ident = &ident;
 	fillInitMsg(reinterpret_cast<initMsg *>(msg), handle);
+	handle.type = protoHandle::INIT;
+	memcpy(handle.sigHeader.ecdheInitiator, reinterpret_cast<initMsg *>(msg)->ecdhe,
+		sizeof(handle.sigHeader.ecdheInitiator));
+	memcpy(handle.sigHeader.ecdsaInitiator, reinterpret_cast<initMsg *>(msg)->ecdsa,
+		sizeof(handle.sigHeader.ecdsaInitiator));
+	memcpy(handle.sigHeader.nonceInitiator, reinterpret_cast<initMsg *>(msg)->nonce,
+		sizeof(handle.sigHeader.nonceInitiator));
+
 	return sizeof(initMsg);
+};
+
+void AstraeusProto::generateHandle(identityHandle &ident, protoHandle &handle) {
+	memset(&handle, 0, sizeof(protoHandle));
+	handle.ident = &ident;
 };
 
 int AstraeusProto::bindSocket(int port) {
