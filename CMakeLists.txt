@@ -22,7 +22,6 @@ ADD_SUBDIRECTORY(deps)
 LINK_DIRECTORIES(
 	${CMAKE_CURRENT_SOURCE_DIR}/deps/openssl
 	${CMAKE_CURRENT_SOURCE_DIR}/deps/tbb
-	${CMAKE_CURRENT_SOURCE_DIR}/deps/libsodium_install/lib64
 	${CMAKE_CURRENT_SOURCE_DIR}/deps/libsodium_install/lib
 )
 INCLUDE_DIRECTORIES(
@@ -41,10 +40,10 @@ SET(OPENSSL_LIBS
 # OpenSSL part is finished here
 
 SET(ALL_LIBS
-	pthread
 	libsodium.a
 	libtbb.a
 	${OPENSSL_LIBS}
+	pthread
 )
 
 ADD_LIBRARY(${PROJECT_NAME} STATIC ${LIBSOURCES})
