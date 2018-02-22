@@ -13,19 +13,11 @@
 #include <unistd.h>
 
 #include "common.hpp"
-#include "dtls.hpp"
+//#include "dtls.hpp"
+#include "cryptoProto.hpp"
 #include "tap.hpp"
 
 using namespace std;
-
-// Taken from:
-// https://stackoverflow.com/a/20602159
-struct pairhash {
-public:
-	template <typename T, typename U> std::size_t operator()(const std::pair<T, U> &x) const {
-		return std::hash<T>()(x.first) ^ std::hash<U>()(x.second);
-	}
-};
 
 static int stopFlag = 0;
 
@@ -33,32 +25,6 @@ void sigHandler(int sig) {
 	(void)sig;
 	stopFlag = 1;
 }
-
-int runConnect(int fd, char *buf, int bufLen, SSL_CTX *ctx, struct sockaddr_in *dst_addr) {
-
-	D(std::cout << "run handlePacket" << std::endl;)
-
-	DTLS::Connection conn = DTLS::createClientConn(ctx);
-
-	// Start the handshake
-	SSL_connect(conn.ssl);
-
-	// Write out all data
-	int readCount;
-	while ((readCount = BIO_read(conn.wbio, buf, bufLen)) > 0) {
-		int sendBytes = sendto(
-			fd, buf, readCount, 0, (struct sockaddr *)dst_addr, sizeof(struct sockaddr_in));
-
-		if (sendBytes != readCount) {
-			throw new std::system_error(std::error_code(errno, std::generic_category()),
-				std::string("runConnect() sendto() failed"));
-		} else {
-			D(std::cout << "runConnect() Send packet to peer" << std::endl;)
-		}
-	}
-
-	return 0;
-};
 
 void usage(string name) {
 	cout << "Usage: " << name << " <server IP> <server port>" << endl;
@@ -82,10 +48,8 @@ int main(int argc, char **argv) {
 
 		signal(SIGINT, sigHandler);
 
-		SSL_CTX *ctx = DTLS::createClientCTX();
-
 		// Create the server UDP listener socket
-		int fd = DTLS::createSocket();
+		int fd = AstraeusProto::createSocket();
 		struct timeval tv;
 		tv.tv_sec = 1;
 		tv.tv_usec = 0;
@@ -95,9 +59,27 @@ int main(int argc, char **argv) {
 
 		char buf[2048];
 
+		AstraeusProto::identityHandle ident;
+		AstraeusProto::generateIdentity(ident);
+		AstraeusProto::protoHandle handle;
+		uint8_t nonce[ASTRAEUSPROTONONCELEN];
+
+		memset(nonce, 0, ASTRAEUSPROTONONCELEN);
+
+		AstraeusProto::generateHandle(ident, handle);
+
 		while (stopFlag == 0) {
-			runConnect(fd, buf, 2048, ctx, &server);
+			int readCount = AstraeusProto::generateInitGivenHandleAndNonce(
+				handle, reinterpret_cast<uint8_t *>(buf), nonce);
+			sodium_increment(nonce, ASTRAEUSPROTONONCELEN);
+
+			int sendBytes = sendto(fd, buf, readCount, 0, (struct sockaddr *)&server,
+				sizeof(struct sockaddr_in));
+			if (sendBytes != readCount) {
+				throw new runtime_error("sendto() failed");
+			}
 		}
+
 		close(fd);
 
 		std::cout << "Client shutting down..." << std::endl;

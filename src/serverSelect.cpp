@@ -18,7 +18,7 @@
 #include <tbb/spin_mutex.h>
 
 #include "common.hpp"
-#include "dtls.hpp"
+#include "cryptoProto.hpp"
 #include "tap.hpp"
 
 using namespace std;
@@ -83,13 +83,16 @@ void sigHandler(int sig) {
 }
 
 struct client {
-	struct DTLS::Connection conn;
+	AstraeusProto::protoHandle handle;
+	bool handshake;
+
 	std::array<uint8_t, 6> mac;
 	uint32_t ip;
 	uint16_t port;
 	tbb::spin_mutex mtx;
 };
 
+#if 0
 int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
 	struct sockaddr_in *src_addr, TapDevice &tap, macTable &macToClient) {
 
@@ -161,111 +164,77 @@ int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
 
 	return 0;
 };
+#endif
+
+int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
+	struct sockaddr_in *src_addr, TapDevice &tap, macTable &macToClient) {
+	(void)bufLen;
+
+	if (c->handshake) {
+		int sendCount;
+		int ret = AstraeusProto::handleHandshakeServer(
+			c->handle, reinterpret_cast<uint8_t *>(buf), sendCount);
+
+		if (ret == 1) {
+			c->handshake = false;
+		}
+
+		if (sendCount > 0) {
+			int sendBytes = sendto(fd, buf, sendCount, 0, (struct sockaddr *)src_addr,
+				sizeof(struct sockaddr_in));
+			if (sendBytes != sendCount) {
+				throw new std::runtime_error("handlePacket() sendto() failed");
+			}
+		}
+	} else {
+		uint8_t outBuf[2048];
+		unsigned int outBufLen;
+		decryptTunnelMsg(
+			reinterpret_cast<uint8_t *>(buf), recvBytes, outBuf, outBufLen, c->handle);
+		int writeLen = tap.write(outBuf, outBufLen);
+		memcpy(c->mac.data(), outBuf + 6, 6);
+		macToClient.insert({c->mac, c});
+
+		if (writeLen < 0) {
+			throw new std::runtime_error("handlePacket() tap.write() failed");
+		} else {
+			D(std::cout << "Written data to TAP" << std::endl;)
+		}
+	}
+
+	return 0;
+}
 
 int handleTap(int fd, char *buf, int bufLen, int readLen, client *c) {
+	(void)bufLen;
 
 	std::lock_guard<tbb::spin_mutex> lckGuard(c->mtx);
 
-	if (SSL_write(c->conn.ssl, buf, readLen) != readLen) {
-		throw new std::runtime_error("handleTap() SSL_write() failed");
-	}
+	uint8_t outBuf[2048];
+	unsigned int outBufLen;
+	AstraeusProto::encryptTunnelMsg(
+		reinterpret_cast<uint8_t *>(buf), readLen, outBuf, outBufLen, c->handle);
+
 	struct sockaddr_in dst_addr;
 	dst_addr.sin_family = AF_INET;
 	dst_addr.sin_addr.s_addr = c->ip;
 	dst_addr.sin_port = c->port;
 
-	int packetCount = 0;
+	int sendBytes = sendto(
+		fd, outBuf, outBufLen, 0, (struct sockaddr *)&dst_addr, sizeof(struct sockaddr_in));
 
-	int readCount;
-	while ((readCount = BIO_read(c->conn.wbio, buf, bufLen)) > 0) {
-		int sendBytes = sendto(
-			fd, buf, readCount, 0, (struct sockaddr *)&dst_addr, sizeof(struct sockaddr_in));
-
-		if (sendBytes != readCount) {
-			throw new std::system_error(std::error_code(errno, std::generic_category()),
-				std::string("handleTap() sendto() failed"));
-		} else {
-			D(std::cout << "handleTap() Send packet to peer" << std::endl;)
-			packetCount++;
-		}
+	if (sendBytes != static_cast<int>(outBufLen)) {
+		throw new std::system_error(std::error_code(errno, std::generic_category()),
+			std::string("handleTap() sendto() failed"));
+	} else {
+		D(std::cout << "handleTap() Send packet to peer" << std::endl;)
 	}
-	return packetCount;
+
+	return 0;
 };
 
-#if 0
-void dtlsThread(
-	int fd, std::shared_ptr<TapDevice> tap, ipTable *ipToClient, macTable *macToClient) {
-	char buf[2048];
-	struct sockaddr_in src_addr;
-	socklen_t addrlen = sizeof(struct sockaddr_in);
-	SSL_CTX *ctx;
-
-	try {
-		ctx = DTLS::createServerCTX("server");
-	} catch (std::exception *e) {
-		std::cout << "Exception caught: " << e->what() << std::endl;
-		return;
-	}
-
-	while (stopFlag == 0) {
-		int ret = recvfrom(fd, (void *)buf, 2048, 0, (struct sockaddr *)&src_addr, &addrlen);
-		if (ret < 0) {
-			if ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR)) {
-				continue;
-			} else {
-				throw new std::system_error(std::error_code(errno, std::generic_category()),
-					std::string("main() recvfrom() failed"));
-			}
-		} else {
-			D(std::cout << "received a packet" << std::endl;)
-		}
-
-		// Look up if there already exists a connection
-		ipTable::accessor connIt;
-		if (!ipToClient->find(connIt, {src_addr.sin_addr.s_addr, src_addr.sin_port})) {
-			std::cout << "Connection from new client" << std::endl;
-			struct client *c = new client();
-			memset(c, 0, sizeof(struct client));
-			c->conn = DTLS::createServerConn(ctx);
-			c->ip = src_addr.sin_addr.s_addr;
-			c->port = src_addr.sin_port;
-
-			ipToClient->insert(connIt, {{src_addr.sin_addr.s_addr, src_addr.sin_port}, c});
-		}
-
-		if (handlePacket(fd, connIt->second, buf, 2048, ret, &src_addr, *tap, *macToClient) ==
-			1) {
-			struct client *c = connIt->second;
-			ipToClient->erase(connIt);
-			macToClient->erase(c->mac);
-			c->mtx.lock();
-			delete (c);
-		}
-	}
-};
-#endif
-
-#if 0
-void tapThread(int fd, std::shared_ptr<TapDevice> tap, macTable *macToClient) {
-	char buf[2048];
-
-	while (stopFlag == 0) {
-		std::array<uint8_t, 6> mac;
-		int readLen = tap->read(buf, 2048);
-		memcpy(mac.data(), buf, 6);
-
-		macTable::accessor connIt;
-		if (macToClient->find(connIt, mac)) {
-			if (handleTap(fd, buf, 2048, readLen, connIt->second) == 0) {
-				throw new std::runtime_error("handleTap() didn't send any packets");
-			}
-		}
-	}
-};
-#endif
-
-void selectThread(
-	int fd, std::shared_ptr<TapDevice> tap, ipTable *ipToClient, macTable *macToClient) {
+void selectThread(int fd, std::shared_ptr<TapDevice> tap, ipTable *ipToClient,
+	macTable *macToClient, AstraeusProto::identityHandle *ident) {
 	fd_set rfd, rfds;
 	FD_ZERO(&rfds);
 	FD_SET(tap->getFd(), &rfds);
@@ -275,15 +244,6 @@ void selectThread(
 	struct timeval tv;
 	tv.tv_sec = 1;
 	tv.tv_usec = 0;
-
-	SSL_CTX *ctx;
-
-	try {
-		ctx = DTLS::createServerCTX("server");
-	} catch (std::exception *e) {
-		cout << "Caught exception: " << e->what() << std::endl;
-		exit(1);
-	}
 
 	try {
 		while (stopFlag == 0) {
@@ -320,7 +280,7 @@ void selectThread(
 					} else {
 						throw new std::system_error(
 							std::error_code(errno, std::generic_category()),
-							std::string("main() recvfrom() failed"));
+							std::string("selectThread() recvfrom() failed"));
 					}
 				} else {
 					D(std::cout << "received a packet" << std::endl;)
@@ -332,7 +292,8 @@ void selectThread(
 					std::cout << "Connection from new client" << std::endl;
 					struct client *c = new client();
 					memset(c, 0, sizeof(struct client));
-					c->conn = DTLS::createServerConn(ctx);
+					AstraeusProto::generateHandle(*ident, c->handle);
+					c->handshake = true;
 					c->ip = src_addr.sin_addr.s_addr;
 					c->port = src_addr.sin_port;
 
@@ -383,6 +344,9 @@ int main(int argc, char **argv) {
 		macTable macToClient;
 		std::thread *selectThreads[NUM_THREADS];
 
+		AstraeusProto::identityHandle ident;
+		AstraeusProto::generateIdentity(ident);
+
 		for (int i = 0; i < NUM_THREADS; i++) {
 
 			// For now, just create a tap interface
@@ -392,7 +356,7 @@ int main(int argc, char **argv) {
 			std::cout << "Create tap dev: " << devName << std::endl;
 
 			// Create the server UDP listener socket
-			fds[i] = DTLS::bindSocket(4433);
+			fds[i] = AstraeusProto::bindSocket(4433);
 			struct timeval tv;
 			tv.tv_sec = 1;
 			tv.tv_usec = 0;
@@ -402,8 +366,8 @@ int main(int argc, char **argv) {
 			std::cout << "bound socket" << std::endl;
 
 			try {
-				selectThreads[i] =
-					new std::thread(selectThread, fds[i], tap, &ipToClient, &macToClient);
+				selectThreads[i] = new std::thread(
+					selectThread, fds[i], tap, &ipToClient, &macToClient, &ident);
 			} catch (std::exception *e) {
 				cout << "Caught exception: " << e->what() << std::endl;
 				exit(1);
@@ -419,13 +383,6 @@ int main(int argc, char **argv) {
 				exit(1);
 			}
 		}
-
-		/*
-		 * Close is already done in the selectThread
-		for (int i = 0; i < NUM_THREADS / 2; i++) {
-			close(fds[i]);
-		}
-		*/
 
 		std::cout << "Server shutting down..." << std::endl;
 	} catch (std::exception *e) {

@@ -13,7 +13,8 @@
 #include <unistd.h>
 
 #include "common.hpp"
-#include "dtls.hpp"
+//#include "dtls.hpp"
+#include "cryptoProto.hpp"
 #include "tap.hpp"
 
 using namespace std;
@@ -34,99 +35,74 @@ void sigHandler(int sig) {
 	stopFlag = 1;
 }
 
-int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recvBytes,
-	struct sockaddr_in *src_addr, TapDevice &tap) {
+int handlePacket(int fd, AstraeusProto::protoHandle &handle, char *buf, int bufLen,
+	int recvBytes, struct sockaddr_in *src_addr, TapDevice &tap) {
+
+	(void)bufLen;
 
 	D(std::cout << "run handlePacket" << std::endl;)
 
-	if (recvBytes > 0) {
-		if (BIO_write(conn.rbio, buf, recvBytes) != recvBytes) {
-			throw new std::runtime_error("handlePacket() BIO_write() failed");
-		}
-	}
-
-	if (SSL_is_init_finished(conn.ssl)) {
+	if (!AstraeusProto::handshakeOngoing(handle)) {
 		// Here the handshake is already finished
 
 		// Try to read incoming byte from the connection
-		int readLen = SSL_read(conn.ssl, buf, bufLen);
-		if ((readLen <= 0) && (SSL_get_shutdown(conn.ssl) == 0)) {
-			throw new std::runtime_error("handlePacket() SSL_read() failed");
-		}
+		uint8_t bufOut[2048];
+		unsigned int bufOutLen;
+		AstraeusProto::decryptTunnelMsg(
+			reinterpret_cast<uint8_t *>(buf), recvBytes, bufOut, bufOutLen, handle);
 
 		// Try to write the incoming bytes to the TAP device
-		if (readLen > 0) {
-			int writeLen = tap.write(buf, readLen);
+		if (bufOutLen > 0) {
+			int writeLen = tap.write(bufOut, bufOutLen);
 			if (writeLen < 0) {
-				std::cout << "readLen=" << readLen << std::endl;
+				std::cout << "bufOutLen=" << bufOutLen << std::endl;
 				throw new std::runtime_error("handlePacket() tap.write() failed");
 			} else {
 				D(std::cout << "Written data to TAP" << std::endl;)
 			}
+		} else {
+			throw new std::runtime_error("handlePacket() bufOutLen <= 0");
 		}
 	} else {
 		// We are currently conducting a handshake
+		int sendCount;
+		handleHandshakeClient(handle, reinterpret_cast<uint8_t *>(buf), sendCount);
 
 		std::cout << "handlePacket() running handshake" << std::endl;
 
-		// The return code is pretty useless, throw it away
-		SSL_connect(conn.ssl);
-
-		if (SSL_is_init_finished(conn.ssl)) {
-			std::cout << "handlePacket() Handshake finished" << std::endl;
-			std::cout << "Algorith: " << SSL_get_cipher_name(conn.ssl)
-					  << " Keylength: " << SSL_get_cipher_bits(conn.ssl, nullptr)
-					  << std::endl;
-		}
-	}
-
-	// Write out all data
-	int readCount;
-	while ((readCount = BIO_read(conn.wbio, buf, bufLen)) > 0) {
-		int sendBytes = sendto(
-			fd, buf, readCount, 0, (struct sockaddr *)src_addr, sizeof(struct sockaddr_in));
-
-		if (sendBytes != readCount) {
-			throw new std::system_error(std::error_code(errno, std::generic_category()),
-				std::string("handlePacket() sendto() failed"));
-		} else {
-			D(std::cout << "handlePacket() Send packet to peer" << std::endl;)
-		}
-	}
-
-	if (SSL_get_shutdown(conn.ssl) != 0) {
-		if (SSL_shutdown(conn.ssl) == 1) {
-			SSL_free(conn.ssl);
-			return 1;
+		if (sendCount > 0) {
+			int sendBytes = sendto(fd, buf, sendCount, 0, (struct sockaddr *)src_addr,
+				sizeof(struct sockaddr_in));
+			if (sendBytes != sendCount) {
+				throw new std::runtime_error("handlePacket() sendto() failed");
+			}
 		}
 	}
 
 	return 0;
 };
 
-int handleTap(int fd, char *buf, int bufLen, int readLen, DTLS::Connection *conn,
+int handleTap(int fd, char *buf, int bufLen, int readLen, AstraeusProto::protoHandle &handle,
 	struct sockaddr_in dst) {
-	if (SSL_write(conn->ssl, buf, readLen) != readLen) {
-		throw new std::runtime_error("handleTap() BIO_write() failed");
+
+	(void)bufLen;
+
+	uint8_t bufOut[2048];
+	unsigned int bufOutLen;
+
+	encryptTunnelMsg(reinterpret_cast<uint8_t *>(buf), readLen, bufOut, bufOutLen, handle);
+
+	int sendBytes =
+		sendto(fd, bufOut, bufOutLen, 0, (struct sockaddr *)&dst, sizeof(struct sockaddr_in));
+
+	if (sendBytes != static_cast<int>(bufOutLen)) {
+		throw new std::system_error(std::error_code(errno, std::generic_category()),
+			std::string("handleTap() sendto() failed"));
+	} else {
+		D(std::cout << "handleTap() Send packet to peer" << std::endl;)
 	}
 
-	int packetCount = 0;
-
-	int readCount;
-	while ((readCount = BIO_read(conn->wbio, buf, bufLen)) > 0) {
-		int sendBytes = sendto(
-			fd, buf, readCount, 0, (struct sockaddr *)&dst, sizeof(struct sockaddr_in));
-
-		if (sendBytes != readCount) {
-			throw new std::system_error(std::error_code(errno, std::generic_category()),
-				std::string("handleTap() sendto() failed"));
-		} else {
-			D(std::cout << "handleTap() Send packet to peer" << std::endl;)
-			packetCount++;
-		}
-	}
-
-	return packetCount;
+	return 0;
 };
 
 void usage(string name) {
@@ -157,10 +133,8 @@ int main(int argc, char **argv) {
 
 		std::cout << "Create tap dev: " << devName << std::endl;
 
-		SSL_CTX *ctx = DTLS::createClientCTX();
-
 		// Create the server UDP listener socket
-		int fd = DTLS::createSocket();
+		int fd = AstraeusProto::createSocket();
 		struct timeval tv;
 		tv.tv_sec = 1;
 		tv.tv_usec = 0;
@@ -176,11 +150,17 @@ int main(int argc, char **argv) {
 		FD_SET(fd, &rfds);
 		int maxfd = max(fd, tap.getFd());
 
-		DTLS::Connection conn = DTLS::createClientConn(ctx);
+		AstraeusProto::identityHandle ident;
+		AstraeusProto::generateIdentity(ident);
+		AstraeusProto::protoHandle handle;
+		int readCount =
+			AstraeusProto::generateInit(ident, handle, reinterpret_cast<uint8_t *>(buf));
 
-		// Start the handshake
-		SSL_connect(conn.ssl);
-		handlePacket(fd, conn, buf, 2048, 0, &server, tap);
+		int sendBytes = sendto(
+			fd, buf, readCount, 0, (struct sockaddr *)&server, sizeof(struct sockaddr_in));
+		if (sendBytes != readCount) {
+			throw new runtime_error("sendto() failed");
+		}
 
 		while (stopFlag == 0) {
 			struct sockaddr_in src_addr;
@@ -217,7 +197,7 @@ int main(int argc, char **argv) {
 					D(std::cout << "received a packet" << std::endl;)
 				}
 
-				if (handlePacket(fd, conn, buf, 2048, ret, &src_addr, tap) == 1) {
+				if (handlePacket(fd, handle, buf, 2048, ret, &src_addr, tap) == 1) {
 					stopFlag = 1;
 				}
 			} else if (FD_ISSET(tap.getFd(), &rfd)) {
@@ -225,7 +205,7 @@ int main(int argc, char **argv) {
 				int readLen = tap.read(buf, 2048);
 
 				D(std::cout << "TAP got data" << std::endl;)
-				if (handleTap(fd, buf, 2048, readLen, &conn, server) < 0) {
+				if (handleTap(fd, buf, 2048, readLen, handle, server) < 0) {
 					throw new std::runtime_error("handleTap() didn't send any packets");
 				}
 			}

@@ -20,42 +20,24 @@ FILE(GLOB LIBSOURCES lib/*.cpp)
 # This will build OpenSSL
 ADD_SUBDIRECTORY(deps)
 LINK_DIRECTORIES(
-	${CMAKE_CURRENT_SOURCE_DIR}/deps/openssl
 	${CMAKE_CURRENT_SOURCE_DIR}/deps/tbb
 	${CMAKE_CURRENT_SOURCE_DIR}/deps/libsodium_install/lib
 )
 INCLUDE_DIRECTORIES(
-	${CMAKE_CURRENT_SOURCE_DIR}/deps/openssl/include/
 	${CMAKE_CURRENT_SOURCE_DIR}/deps/tbb/include
 	${CMAKE_CURRENT_SOURCE_DIR}/deps/libsodium_install/include
 )
-SET(OPENSSL_LIBS
-	-Wl,--whole-archive
-	libssl.a
-	-Wl,--whole-archive
-	libcrypto.a
-	-Wl,--no-whole-archive
-	dl
-)
-# OpenSSL part is finished here
 
 SET(ALL_LIBS
 	libsodium.a
 	libtbb.a
-	${OPENSSL_LIBS}
 	pthread
 )
 
 ADD_LIBRARY(${PROJECT_NAME} STATIC ${LIBSOURCES})
 TARGET_LINK_LIBRARIES(${PROJECT_NAME} ${ALL_LIBS})
 
-ADD_DEPENDENCIES(${PROJECT_NAME} OpenSSL TBB libsodium)
-
-#ADD_EXECUTABLE(server src/server.cpp)
-#TARGET_LINK_LIBRARIES(server ${PROJECT_NAME})
-#
-#ADD_EXECUTABLE(client src/client.cpp)
-#TARGET_LINK_LIBRARIES(client ${PROJECT_NAME})
+ADD_DEPENDENCIES(${PROJECT_NAME} TBB libsodium)
 
 FILE(GLOB EXES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
 foreach(EXECPP ${EXES})
