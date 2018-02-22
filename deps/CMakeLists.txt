@@ -1,5 +1,6 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 2.9)
 
+if(NOT MoonState_Build_lib)
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/tbb/libtbb.a
 	PRE_LINK
 	COMMAND $(MAKE) "extra_inc=big_iron.inc"
@@ -9,6 +10,7 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/tbb/libtbb.a
 
 add_custom_target(TBB DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tbb/libtbb.a
 	${CMAKE_CURRENT_SOURCE_DIR}/tbb/libtbb.a)
+endif(NOT MoonState_Build_lib)
 
 ###############################################################################
 
