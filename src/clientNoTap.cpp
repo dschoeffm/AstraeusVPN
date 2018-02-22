@@ -40,7 +40,7 @@ int handlePacket(int fd, AstraeusProto::protoHandle &handle, char *buf, int bufL
 
 	(void)bufLen;
 
-	D(std::cout << "run handlePacket" << std::endl;)
+	DEBUG_ENABLED(std::cout << "run handlePacket" << std::endl;)
 
 	if (!AstraeusProto::handshakeOngoing(handle)) {
 		// Here the handshake is already finished
@@ -133,7 +133,7 @@ int main(int argc, char **argv) {
 						std::string("main() recvfrom() failed"));
 				}
 			} else {
-				D(std::cout << "received a packet" << std::endl;)
+				DEBUG_ENABLED(std::cout << "received a packet" << std::endl;)
 			}
 
 			if (handlePacket(fd, handle, buf, 2048, ret, &src_addr) == 1) {

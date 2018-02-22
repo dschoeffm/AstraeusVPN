@@ -148,7 +148,7 @@ void selectThread(int fd, ipTable *ipToClient, macTable *macToClient,
 						std::string("selectThread() recvfrom() failed"));
 				}
 			} else {
-				D(std::cout << "received a packet" << std::endl;)
+				DEBUG_ENABLED(std::cout << "received a packet" << std::endl;)
 			}
 
 			ipTable::accessor connIt;

@@ -20,8 +20,8 @@ void AstraeusProto::fillInitMsg(struct initMsg *msg, protoHandle &handle) {
 	msg->type = AstraeusProto::initMsg::initMsgType;
 	memcpy(msg->ecdsa, handle.ident->pubKey, sizeof(msg->ecdsa));
 
-	D(std::cout << "fillInitMsg() init msg:" << std::endl;)
-	D(hexdump(msg, sizeof(struct initMsg));)
+	DEBUG_ENABLED(std::cout << "fillInitMsg() init msg:" << std::endl;)
+	DEBUG_ENABLED(hexdump(msg, sizeof(struct initMsg));)
 
 	// handle.type = protoHandle::INIT;
 };
@@ -35,8 +35,8 @@ void AstraeusProto::fillInitMsgSeed(struct initMsg *msg, protoHandle &handle,
 	msg->type = AstraeusProto::initMsg::initMsgType;
 	memcpy(msg->ecdsa, handle.ident->pubKey, sizeof(msg->ecdsa));
 
-	D(std::cout << "fillInitMsg() init msg:" << std::endl;)
-	D(hexdump(msg, sizeof(struct initMsg));)
+	DEBUG_ENABLED(std::cout << "fillInitMsg() init msg:" << std::endl;)
+	DEBUG_ENABLED(hexdump(msg, sizeof(struct initMsg));)
 
 	// handle.type = protoHandle::INIT;
 };
@@ -50,8 +50,8 @@ void AstraeusProto::fillInitMsgNonce(
 	msg->type = AstraeusProto::initMsg::initMsgType;
 	memcpy(msg->ecdsa, handle.ident->pubKey, sizeof(msg->ecdsa));
 
-	D(std::cout << "fillInitMsg() init msg:" << std::endl;)
-	D(hexdump(msg, sizeof(struct initMsg));)
+	DEBUG_ENABLED(std::cout << "fillInitMsg() init msg:" << std::endl;)
+	DEBUG_ENABLED(hexdump(msg, sizeof(struct initMsg));)
 
 	// handle.type = protoHandle::INIT;
 };
@@ -65,11 +65,13 @@ void AstraeusProto::handleInitMsg(struct initMsg *msg, protoHandle &handle, bool
 		throw new std::runtime_error("handleInitMsg() msg is not init");
 	}
 
-	D(std::cout << std::endl
-				<< "AstraeusProto::handleInitMsg() own ecdh public key:" << std::endl;)
-	D(hexdump(&handle.ecdhPub, sizeof(handle.ecdhPub));)
-	D(std::cout << "AstraeusProto::handleInitMsg() peer ecdh public key:" << std::endl;)
-	D(hexdump(msg->ecdhe, sizeof(msg->ecdhe));)
+	DEBUG_ENABLED(
+		std::cout << std::endl
+				  << "AstraeusProto::handleInitMsg() own ecdh public key:" << std::endl;)
+	DEBUG_ENABLED(hexdump(&handle.ecdhPub, sizeof(handle.ecdhPub));)
+	DEBUG_ENABLED(
+		std::cout << "AstraeusProto::handleInitMsg() peer ecdh public key:" << std::endl;)
+	DEBUG_ENABLED(hexdump(msg->ecdhe, sizeof(msg->ecdhe));)
 
 	// Create the session keys
 	if (client) {
@@ -84,10 +86,10 @@ void AstraeusProto::handleInitMsg(struct initMsg *msg, protoHandle &handle, bool
 		}
 	}
 
-	D(std::cout << "AstraeusProto::handleInitMsg() own rx key:" << std::endl;)
-	D(hexdump(&handle.rxKey, sizeof(handle.rxKey));)
-	D(std::cout << "AstraeusProto::handleInitMsg() own tx key:" << std::endl;)
-	D(hexdump(&handle.txKey, sizeof(handle.txKey));)
+	DEBUG_ENABLED(std::cout << "AstraeusProto::handleInitMsg() own rx key:" << std::endl;)
+	DEBUG_ENABLED(hexdump(&handle.rxKey, sizeof(handle.rxKey));)
+	DEBUG_ENABLED(std::cout << "AstraeusProto::handleInitMsg() own tx key:" << std::endl;)
+	DEBUG_ENABLED(hexdump(&handle.txKey, sizeof(handle.txKey));)
 
 	memcpy(handle.peerEcdsaPub, msg->ecdsa, sizeof(handle.peerEcdsaPub));
 	memcpy(handle.rxNonce, msg->nonce, sizeof(handle.rxNonce));
@@ -111,14 +113,15 @@ void AstraeusProto::fillAuthMsg(struct authMsg *msg, protoHandle &handle) {
 	crypto_sign_detached(msg->sig, NULL, reinterpret_cast<uint8_t *>(&handle.sigHeader),
 		sizeof(handle.sigHeader), handle.ident->secKey);
 
-	D(std::cout << std::endl << "fillAuthMsg() Signature public key:" << std::endl;)
-	D(hexdump(handle.ident->pubKey, sizeof(handle.ident->pubKey));)
+	DEBUG_ENABLED(std::cout << std::endl
+							<< "fillAuthMsg() Signature public key:" << std::endl;)
+	DEBUG_ENABLED(hexdump(handle.ident->pubKey, sizeof(handle.ident->pubKey));)
 
-	D(std::cout << "fillAuthMsg() Signature in message:" << std::endl;)
-	D(hexdump(msg->sig, sizeof(msg->sig));)
+	DEBUG_ENABLED(std::cout << "fillAuthMsg() Signature in message:" << std::endl;)
+	DEBUG_ENABLED(hexdump(msg->sig, sizeof(msg->sig));)
 
-	D(std::cout << "fillAuthMsg() auth msg:" << std::endl;)
-	D(hexdump(msg, sizeof(struct authMsg));)
+	DEBUG_ENABLED(std::cout << "fillAuthMsg() auth msg:" << std::endl;)
+	DEBUG_ENABLED(hexdump(msg, sizeof(struct authMsg));)
 
 	if (crypto_sign_verify_detached(msg->sig, reinterpret_cast<uint8_t *>(&handle.sigHeader),
 			sizeof(handle.sigHeader), handle.ident->pubKey) != 0) {

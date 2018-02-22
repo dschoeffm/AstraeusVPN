@@ -96,7 +96,7 @@ struct client {
 int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
 	struct sockaddr_in *src_addr, TapDevice &tap, macTable &macToClient) {
 
-	D(std::cout << "run handlePacket" << std::endl;)
+	DEBUG_ENABLED(std::cout << "run handlePacket" << std::endl;)
 
 	std::lock_guard<tbb::spin_mutex> lckGuard(c->mtx);
 
@@ -122,7 +122,7 @@ int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
 				std::cout << "readLen=" << readLen << std::endl;
 				throw new std::runtime_error("handlePacket() tap.write() failed");
 			} else {
-				D(std::cout << "Written data to TAP" << std::endl;)
+				DEBUG_ENABLED(std::cout << "Written data to TAP" << std::endl;)
 			}
 		}
 	} else {
@@ -151,7 +151,7 @@ int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
 			throw new std::system_error(std::error_code(errno, std::generic_category()),
 				std::string("handlePacket() sendto() failed"));
 		} else {
-			D(std::cout << "handlePacket() Send packet to peer" << std::endl;)
+			DEBUG_ENABLED(std::cout << "handlePacket() Send packet to peer" << std::endl;)
 		}
 	}
 
@@ -198,7 +198,7 @@ int handlePacket(int fd, struct client *c, char *buf, int bufLen, int recvBytes,
 		if (writeLen < 0) {
 			throw new std::runtime_error("handlePacket() tap.write() failed");
 		} else {
-			D(std::cout << "Written data to TAP" << std::endl;)
+			DEBUG_ENABLED(std::cout << "Written data to TAP" << std::endl;)
 		}
 	}
 
@@ -227,7 +227,7 @@ int handleTap(int fd, char *buf, int bufLen, int readLen, client *c) {
 		throw new std::system_error(std::error_code(errno, std::generic_category()),
 			std::string("handleTap() sendto() failed"));
 	} else {
-		D(std::cout << "handleTap() Send packet to peer" << std::endl;)
+		DEBUG_ENABLED(std::cout << "handleTap() Send packet to peer" << std::endl;)
 	}
 
 	return 0;
@@ -283,7 +283,7 @@ void selectThread(int fd, std::shared_ptr<TapDevice> tap, ipTable *ipToClient,
 							std::string("selectThread() recvfrom() failed"));
 					}
 				} else {
-					D(std::cout << "received a packet" << std::endl;)
+					DEBUG_ENABLED(std::cout << "received a packet" << std::endl;)
 				}
 
 				ipTable::accessor connIt;

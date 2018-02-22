@@ -2,9 +2,9 @@
 #define COMMON_HPP
 
 #ifdef DEBUG
-#define D(x) x
+#define DEBUG_ENABLED(x) x
 #else
-#define D(x)
+#define DEBUG_ENABLED(x)
 #endif
 
 /*! Dump hex data
