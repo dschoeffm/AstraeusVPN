@@ -62,12 +62,16 @@ int main(int argc, char **argv) {
 		AstraeusProto::identityHandle ident;
 		AstraeusProto::generateIdentity(ident);
 		AstraeusProto::protoHandle handle;
+		uint8_t nonceSeed[randombytes_SEEDBYTES];
+
+		randombytes_buf(nonceSeed, randombytes_SEEDBYTES);
 
 		AstraeusProto::generateHandle(ident, handle);
 
 		while (stopFlag == 0) {
-			int readCount = AstraeusProto::generateInitGivenHandle(
-				handle, reinterpret_cast<uint8_t *>(buf));
+			int readCount = AstraeusProto::generateInitGivenHandleAndSeed(
+				handle, reinterpret_cast<uint8_t *>(buf), nonceSeed);
+			sodium_increment(nonceSeed, randombytes_SEEDBYTES);
 
 			int sendBytes = sendto(fd, buf, readCount, 0, (struct sockaddr *)&server,
 				sizeof(struct sockaddr_in));

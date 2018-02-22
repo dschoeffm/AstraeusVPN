@@ -26,6 +26,21 @@ void AstraeusProto::fillInitMsg(struct initMsg *msg, protoHandle &handle) {
 	// handle.type = protoHandle::INIT;
 };
 
+void AstraeusProto::fillInitMsg(struct initMsg *msg, protoHandle &handle,
+	const uint8_t nonceSeed[randombytes_SEEDBYTES]) {
+
+	memcpy(msg->ecdhe, handle.ecdhPub, crypto_kx_PUBLICKEYBYTES);
+	randombytes_buf_deterministic(msg->nonce, sizeof(msg->nonce), nonceSeed);
+	memcpy(handle.txNonce, msg->nonce, sizeof(msg->nonce));
+	msg->type = AstraeusProto::initMsg::initMsgType;
+	memcpy(msg->ecdsa, handle.ident->pubKey, sizeof(msg->ecdsa));
+
+	D(std::cout << "fillInitMsg() init msg:" << std::endl;)
+	D(hexdump(msg, sizeof(struct initMsg));)
+
+	// handle.type = protoHandle::INIT;
+};
+
 void AstraeusProto::handleInitMsg(struct initMsg *msg, protoHandle &handle, bool client) {
 	if (handle.type != protoHandle::INIT) {
 		throw new std::runtime_error("handleInitMsg() current state is not init");
@@ -273,6 +288,20 @@ int AstraeusProto::generateInit(identityHandle &ident, protoHandle &handle, uint
 
 int AstraeusProto::generateInitGivenHandle(protoHandle &handle, uint8_t *msg) {
 	fillInitMsg(reinterpret_cast<initMsg *>(msg), handle);
+	handle.type = protoHandle::INIT;
+	memcpy(handle.sigHeader.ecdheInitiator, reinterpret_cast<initMsg *>(msg)->ecdhe,
+		sizeof(handle.sigHeader.ecdheInitiator));
+	memcpy(handle.sigHeader.ecdsaInitiator, reinterpret_cast<initMsg *>(msg)->ecdsa,
+		sizeof(handle.sigHeader.ecdsaInitiator));
+	memcpy(handle.sigHeader.nonceInitiator, reinterpret_cast<initMsg *>(msg)->nonce,
+		sizeof(handle.sigHeader.nonceInitiator));
+
+	return sizeof(initMsg);
+};
+
+int AstraeusProto::generateInitGivenHandleAndSeed(
+	protoHandle &handle, uint8_t *msg, const uint8_t nonceSeed[randombytes_SEEDBYTES]) {
+	fillInitMsg(reinterpret_cast<initMsg *>(msg), handle, nonceSeed);
 	handle.type = protoHandle::INIT;
 	memcpy(handle.sigHeader.ecdheInitiator, reinterpret_cast<initMsg *>(msg)->ecdhe,
 		sizeof(handle.sigHeader.ecdheInitiator));

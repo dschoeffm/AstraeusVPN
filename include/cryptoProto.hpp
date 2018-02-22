@@ -62,6 +62,8 @@ struct protoHandle {
 };
 
 void fillInitMsg(struct initMsg *msg, protoHandle &handle);
+void fillInitMsg(
+	struct initMsg *msg, protoHandle &handle, const uint8_t nonceSeed[randombytes_SEEDBYTES]);
 void handleInitMsg(struct initMsg *msg, protoHandle &handle, bool client);
 
 void fillAuthMsg(struct authMsg *msg, protoHandle &handle);
@@ -81,6 +83,8 @@ int generateInit(identityHandle &ident, protoHandle &handle, uint8_t *msg);
 
 // This is like generateInit, but generateHandle has to be called beforehand
 int generateInitGivenHandle(protoHandle &handle, uint8_t *msg);
+int generateInitGivenHandleAndSeed(
+	protoHandle &handle, uint8_t *msg, const uint8_t nonceSeed[randombytes_SEEDBYTES]);
 void generateHandle(identityHandle &ident, protoHandle &handle);
 
 void decryptTunnelMsg(uint8_t *msgIn, unsigned int msgInLen, uint8_t *msgOut,
