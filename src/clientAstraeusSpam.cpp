@@ -61,11 +61,13 @@ int main(int argc, char **argv) {
 
 		AstraeusProto::identityHandle ident;
 		AstraeusProto::generateIdentity(ident);
+		AstraeusProto::protoHandle handle;
+
+		AstraeusProto::generateHandle(ident, handle);
 
 		while (stopFlag == 0) {
-			AstraeusProto::protoHandle handle;
-			int readCount =
-				AstraeusProto::generateInit(ident, handle, reinterpret_cast<uint8_t *>(buf));
+			int readCount = AstraeusProto::generateInitGivenHandle(
+				handle, reinterpret_cast<uint8_t *>(buf));
 
 			int sendBytes = sendto(fd, buf, readCount, 0, (struct sockaddr *)&server,
 				sizeof(struct sockaddr_in));

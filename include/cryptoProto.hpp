@@ -78,6 +78,9 @@ void generateIdentity(identityHandle &ident);
 // Generate Init message and protoHandle
 // Will write init msg into "msg", and handle into "handle"
 int generateInit(identityHandle &ident, protoHandle &handle, uint8_t *msg);
+
+// This is like generateInit, but generateHandle has to be called beforehand
+int generateInitGivenHandle(protoHandle &handle, uint8_t *msg);
 void generateHandle(identityHandle &ident, protoHandle &handle);
 
 void decryptTunnelMsg(uint8_t *msgIn, unsigned int msgInLen, uint8_t *msgOut,

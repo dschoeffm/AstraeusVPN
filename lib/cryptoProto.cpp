@@ -268,6 +268,10 @@ void AstraeusProto::generateIdentity(identityHandle &ident) {
 int AstraeusProto::generateInit(identityHandle &ident, protoHandle &handle, uint8_t *msg) {
 	generateHandle(ident, handle);
 
+	return generateInitGivenHandle(handle, msg);
+};
+
+int AstraeusProto::generateInitGivenHandle(protoHandle &handle, uint8_t *msg) {
 	fillInitMsg(reinterpret_cast<initMsg *>(msg), handle);
 	handle.type = protoHandle::INIT;
 	memcpy(handle.sigHeader.ecdheInitiator, reinterpret_cast<initMsg *>(msg)->ecdhe,
