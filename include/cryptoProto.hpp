@@ -62,8 +62,10 @@ struct protoHandle {
 };
 
 void fillInitMsg(struct initMsg *msg, protoHandle &handle);
-void fillInitMsg(
+void fillInitMsgSeed(
 	struct initMsg *msg, protoHandle &handle, const uint8_t nonceSeed[randombytes_SEEDBYTES]);
+void fillInitMsgNonce(
+	struct initMsg *msg, protoHandle &handle, const uint8_t nonceSeed[ASTRAEUSPROTONONCELEN]);
 void handleInitMsg(struct initMsg *msg, protoHandle &handle, bool client);
 
 void fillAuthMsg(struct authMsg *msg, protoHandle &handle);
@@ -85,6 +87,9 @@ int generateInit(identityHandle &ident, protoHandle &handle, uint8_t *msg);
 int generateInitGivenHandle(protoHandle &handle, uint8_t *msg);
 int generateInitGivenHandleAndSeed(
 	protoHandle &handle, uint8_t *msg, const uint8_t nonceSeed[randombytes_SEEDBYTES]);
+int generateInitGivenHandleAndNonce(
+	protoHandle &handle, uint8_t *msg, const uint8_t nonceSeed[ASTRAEUSPROTONONCELEN]);
+
 void generateHandle(identityHandle &ident, protoHandle &handle);
 
 void decryptTunnelMsg(uint8_t *msgIn, unsigned int msgInLen, uint8_t *msgOut,
