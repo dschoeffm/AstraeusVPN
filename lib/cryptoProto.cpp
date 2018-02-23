@@ -351,6 +351,14 @@ void AstraeusProto::generateHandle(identityHandle &ident, protoHandle &handle) {
 	crypto_kx_keypair(handle.ecdhPub, handle.ecdhSec);
 };
 
+void AstraeusProto::generateHandleGivenKey(identityHandle &ident, protoHandle &handle,
+	uint8_t ecdhPub[crypto_kx_PUBLICKEYBYTES], uint8_t ecdhSec[crypto_kx_SECRETKEYBYTES]) {
+	memset(&handle, 0, sizeof(protoHandle));
+	handle.ident = &ident;
+	memcpy(handle.ecdhPub, ecdhPub, sizeof(handle.ecdhPub));
+	memcpy(handle.ecdhSec, ecdhSec, sizeof(handle.ecdhSec));
+};
+
 int AstraeusProto::bindSocket(int port) {
 	int fd;
 	struct sockaddr_in addr;
