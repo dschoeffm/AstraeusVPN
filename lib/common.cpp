@@ -35,7 +35,7 @@ void hexdump(const void *data, int dataLen) {
 				ascii << '.';
 			}
 
-			hexDump << " " << setfill('0') << setw(4) << hex << uppercase << varInt;
+			hexDump << " " << setfill('0') << setw(2) << hex << uppercase << varInt;
 		}
 
 		for (int i = lineLength; i < 16; i++) {
