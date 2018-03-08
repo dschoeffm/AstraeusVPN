@@ -73,6 +73,7 @@ void AstraeusProto::handleInitMsg(struct initMsg *msg, protoHandle &handle, bool
 		std::cout << "AstraeusProto::handleInitMsg() peer ecdh public key:" << std::endl;)
 	DEBUG_ENABLED(hexdump(msg->ecdhe, sizeof(msg->ecdhe));)
 
+#ifndef ASTRAEUS_PSK
 	// Create the session keys
 	if (client) {
 		if (crypto_kx_client_session_keys(handle.rxKey, handle.txKey, handle.ecdhPub,
@@ -85,6 +86,54 @@ void AstraeusProto::handleInitMsg(struct initMsg *msg, protoHandle &handle, bool
 			throw new std::runtime_error("handleInitMsg() key exchange failed");
 		}
 	}
+#else
+
+	/*
+	 * XXX
+	 * XXX This is just a toy experiment and should never be used
+	 * XXX
+	 */
+
+	unsigned char keyid[crypto_generichash_blake2b_SALTBYTES] = {0};
+	const unsigned char appid[crypto_generichash_blake2b_PERSONALBYTES] = {0};
+	unsigned char masterkey[sizeof(handle.txNonce) * 2 + sizeof(handle.ecdhPub) * 2 + 16] = {
+		0};
+
+	unsigned char psk[16] = {0};
+
+	if (client) {
+		memcpy(masterkey, handle.txNonce, sizeof(handle.txNonce));
+		memcpy(masterkey + sizeof(handle.txNonce), handle.rxNonce, sizeof(handle.rxNonce));
+		memcpy(
+			masterkey + sizeof(handle.txNonce) * 2, handle.ecdhPub, sizeof(handle.ecdhPub));
+		memcpy(masterkey + sizeof(handle.txNonce) * 2 + sizeof(handle.ecdhPub), msg->ecdhe,
+			sizeof(msg->ecdhe));
+		memcpy(masterkey + sizeof(handle.txNonce) * 2 + sizeof(handle.ecdhPub) * 2, psk, 16);
+
+		crypto_generichash_blake2b_salt_personal(handle.txKey, sizeof(handle.txKey), NULL, 0,
+			masterkey, sizeof(masterkey), keyid, appid);
+
+		sodium_increment(keyid, sizeof keyid);
+
+		crypto_generichash_blake2b_salt_personal(handle.rxKey, sizeof(handle.rxKey), NULL, 0,
+			masterkey, sizeof(masterkey), keyid, appid);
+	} else {
+		memcpy(masterkey, handle.rxNonce, sizeof(handle.rxNonce));
+		memcpy(masterkey + sizeof(handle.rxNonce), handle.txNonce, sizeof(handle.txNonce));
+		memcpy(masterkey + sizeof(handle.txNonce) * 2, msg->ecdhe, sizeof(msg->ecdhe));
+		memcpy(masterkey + sizeof(handle.txNonce) * 2 + sizeof(handle.ecdhPub),
+			handle.ecdhPub, sizeof(handle.ecdhPub));
+		memcpy(masterkey + sizeof(handle.txNonce) * 2 + sizeof(handle.ecdhPub) * 2, psk, 16);
+
+		crypto_generichash_blake2b_salt_personal(handle.rxKey, sizeof(handle.rxKey), NULL, 0,
+			masterkey, sizeof(masterkey), keyid, appid);
+
+		sodium_increment(keyid, sizeof keyid);
+
+		crypto_generichash_blake2b_salt_personal(handle.txKey, sizeof(handle.txKey), NULL, 0,
+			masterkey, sizeof(masterkey), keyid, appid);
+	}
+#endif
 
 	DEBUG_ENABLED(std::cout << "AstraeusProto::handleInitMsg() own rx key:" << std::endl;)
 	DEBUG_ENABLED(hexdump(&handle.rxKey, sizeof(handle.rxKey));)
