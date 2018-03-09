@@ -93,6 +93,9 @@ int generateInitGivenHandleAndNonce(
 void generateHandle(identityHandle &ident, protoHandle &handle);
 void generateHandleGivenKey(identityHandle &ident, protoHandle &handle,
 	uint8_t ecdhPub[crypto_kx_PUBLICKEYBYTES], uint8_t ecdhSec[crypto_kx_SECRETKEYBYTES]);
+void generateHandleGivenKeyAndNonce(identityHandle &ident, protoHandle &handle,
+	uint8_t ecdhPub[crypto_kx_PUBLICKEYBYTES], uint8_t ecdhSec[crypto_kx_SECRETKEYBYTES],
+	uint8_t nonce[ASTRAEUSPROTONONCELEN]);
 
 void decryptTunnelMsg(uint8_t *msgIn, unsigned int msgInLen, uint8_t *msgOut,
 	unsigned int &msgOutLen, protoHandle &handle);
