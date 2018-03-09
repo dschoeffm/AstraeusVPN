@@ -159,6 +159,7 @@ void AstraeusProto::fillAuthMsg(struct authMsg *msg, protoHandle &handle) {
 
 	msg->type = AstraeusProto::authMsg::authMsgType;
 
+#ifndef ASTRAEUS_PSK
 	crypto_sign_detached(msg->sig, NULL, reinterpret_cast<uint8_t *>(&handle.sigHeader),
 		sizeof(handle.sigHeader), handle.ident->secKey);
 
@@ -172,10 +173,24 @@ void AstraeusProto::fillAuthMsg(struct authMsg *msg, protoHandle &handle) {
 	DEBUG_ENABLED(std::cout << "fillAuthMsg() auth msg:" << std::endl;)
 	DEBUG_ENABLED(hexdump(msg, sizeof(struct authMsg));)
 
-	if (crypto_sign_verify_detached(msg->sig, reinterpret_cast<uint8_t *>(&handle.sigHeader),
-			sizeof(handle.sigHeader), handle.ident->pubKey) != 0) {
+	DEBUG_ENABLED(if (crypto_sign_verify_detached(msg->sig,
+						  reinterpret_cast<uint8_t *>(&handle.sigHeader),
+						  sizeof(handle.sigHeader), handle.ident->pubKey) != 0) {
 		throw new std::runtime_error("fillAuthMsg() own signature verification failed");
+	})
+
+#else
+
+	unsigned char key[crypto_auth_KEYBYTES] = {0};
+
+	if (sizeof(msg->sig) < crypto_auth_BYTES) {
+		throw new std::runtime_error("fillAuthMsg() MAC is too large");
 	}
+
+	crypto_auth(msg->sig, reinterpret_cast<uint8_t *>(&handle.sigHeader),
+		sizeof(handle.sigHeader), key);
+
+#endif
 };
 
 void AstraeusProto::handleAuthMsg(struct authMsg *msg, protoHandle &handle) {
@@ -186,6 +201,8 @@ void AstraeusProto::handleAuthMsg(struct authMsg *msg, protoHandle &handle) {
 	if (msg->type != authMsg::authMsgType) {
 		throw new std::runtime_error("handleAuthMsg() msg is not auth");
 	}
+
+#ifndef ASTRAEUS_PSK
 
 	int ret =
 		crypto_sign_verify_detached(msg->sig, reinterpret_cast<uint8_t *>(&handle.sigHeader),
@@ -201,6 +218,20 @@ void AstraeusProto::handleAuthMsg(struct authMsg *msg, protoHandle &handle) {
 		throw new std::runtime_error(
 			"AstraeusProto::handleAuthMsg() Signature doesn't match");
 	}
+
+#else
+
+	unsigned char key[crypto_auth_KEYBYTES] = {0};
+
+	int ret = crypto_auth_verify(msg->sig, reinterpret_cast<uint8_t *>(&handle.sigHeader),
+		sizeof(handle.sigHeader), key);
+
+	if (ret != 0) {
+		throw new std::runtime_error(
+			"AstraeusProto::handleAuthMsg() Signature doesn't match");
+	}
+
+#endif
 
 	assert(crypto_aead_chacha20poly1305_IETF_KEYBYTES == crypto_kx_SESSIONKEYBYTES);
 
