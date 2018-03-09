@@ -359,6 +359,16 @@ void AstraeusProto::generateHandleGivenKey(identityHandle &ident, protoHandle &h
 	memcpy(handle.ecdhSec, ecdhSec, sizeof(handle.ecdhSec));
 };
 
+void AstraeusProto::generateHandleGivenKeyAndNonce(identityHandle &ident, protoHandle &handle,
+	uint8_t ecdhPub[crypto_kx_PUBLICKEYBYTES], uint8_t ecdhSec[crypto_kx_SECRETKEYBYTES],
+	uint8_t nonce[ASTRAEUSPROTONONCELEN]) {
+	memset(&handle, 0, sizeof(protoHandle));
+	handle.ident = &ident;
+	memcpy(handle.ecdhPub, ecdhPub, sizeof(handle.ecdhPub));
+	memcpy(handle.ecdhSec, ecdhSec, sizeof(handle.ecdhSec));
+	memcpy(handle.txNonce, nonce, sizeof(handle.txNonce));
+};
+
 int AstraeusProto::bindSocket(int port) {
 	int fd;
 	struct sockaddr_in addr;
