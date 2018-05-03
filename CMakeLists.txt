@@ -1,6 +1,9 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 2.9)
 PROJECT(Astraeus CXX)
 
+option(ASTRAEUSVPN_BUILD_TBB "Build TBB in AstraeusVPN" ON)
+option(ASTRAEUSVPN_BUILD_LIBSODIUM "Build libsodium in AstraeusVPN" ON)
+
 # Default build type is Release
 if(NOT CMAKE_BUILD_TYPE)
 	SET(CMAKE_BUILD_TYPE "Release")
