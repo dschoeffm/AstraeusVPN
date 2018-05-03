@@ -7,6 +7,8 @@
 
 using namespace std;
 
+#ifdef ASTRAEUS_BUILD_HEXDUMP
+
 void hexdump(const void *data, int dataLen) {
 	const char *const start = static_cast<const char *>(data);
 
@@ -52,3 +54,4 @@ void hexdump(const void *data, int dataLen) {
 
 	cout << all.str();
 }
+#endif
