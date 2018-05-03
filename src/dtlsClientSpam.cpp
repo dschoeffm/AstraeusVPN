@@ -36,7 +36,7 @@ void sigHandler(int sig) {
 
 int runConnect(int fd, char *buf, int bufLen, SSL_CTX *ctx, struct sockaddr_in *dst_addr) {
 
-	D(std::cout << "run handlePacket" << std::endl;)
+	DEBUG_ENABLED(std::cout << "run handlePacket" << std::endl;)
 
 	DTLS::Connection conn = DTLS::createClientConn(ctx);
 
@@ -53,7 +53,7 @@ int runConnect(int fd, char *buf, int bufLen, SSL_CTX *ctx, struct sockaddr_in *
 			throw new std::system_error(std::error_code(errno, std::generic_category()),
 				std::string("runConnect() sendto() failed"));
 		} else {
-			D(std::cout << "runConnect() Send packet to peer" << std::endl;)
+			DEBUG_ENABLED(std::cout << "runConnect() Send packet to peer" << std::endl;)
 		}
 	}
 

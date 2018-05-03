@@ -7,10 +7,6 @@ option(ASTRAEUSVPN_BUILD_OPENSSL "Build libsodium in AstraeusVPN" ON)
 option(ASTRAEUSVPN_BUILD_HEXDUMP "Build hexdump in AstraeusVPN" ON)
 option(ASTRAEUSVPN_BUILD_BINARIES "Build application binaries for AstraeusVPN" ON)
 
-if(ASTRAUESVPN_BUILD_HEXDUMP)
-	add_definitions(-DASTRAEUS_BUILD_HEXDUMP)
-endif()
-
 # Default build type is Release
 if(NOT CMAKE_BUILD_TYPE)
 	SET(CMAKE_BUILD_TYPE "Release")
@@ -20,6 +16,10 @@ SET(CMAKE_CXX_FLAGS "-Wall -Wextra -std=c++14 -march=native -g -fno-omit-frame-p
 
 SET(CMAKE_CXX_FLAGS_DEBUG "-DDEBUG -g3 -O0 -fno-optimize-sibling-calls -fno-inline")
 SET(CMAKE_CXX_FLAGS_RELEASE "-O3")
+
+if(ASTRAEUSVPN_BUILD_HEXDUMP)
+	add_definitions(-DASTRAEUS_BUILD_HEXDUMP)
+endif()
 
 INCLUDE_DIRECTORIES(
 	${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -41,15 +41,18 @@ INCLUDE_DIRECTORIES(
 )
 
 SET(ALL_LIBS
+	dl
 	libsodium.a
 	libtbb.a
+	libssl.a
+	libcrypto.a
 	pthread
 )
 
 ADD_LIBRARY(${PROJECT_NAME} STATIC ${LIBSOURCES})
 TARGET_LINK_LIBRARIES(${PROJECT_NAME} ${ALL_LIBS})
 
-ADD_DEPENDENCIES(${PROJECT_NAME} TBB libsodium)
+ADD_DEPENDENCIES(${PROJECT_NAME} TBB libsodium OpenSSL)
 
 if(ASTRAEUSVPN_BUILD_BINARIES)
 	FILE(GLOB EXES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)

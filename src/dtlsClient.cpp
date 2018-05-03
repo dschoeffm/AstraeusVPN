@@ -37,7 +37,7 @@ void sigHandler(int sig) {
 int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recvBytes,
 	struct sockaddr_in *src_addr, TapDevice &tap) {
 
-	D(std::cout << "run handlePacket" << std::endl;)
+	DEBUG_ENABLED(std::cout << "run handlePacket" << std::endl;)
 
 	if (recvBytes > 0) {
 		if (BIO_write(conn.rbio, buf, recvBytes) != recvBytes) {
@@ -61,7 +61,7 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 				std::cout << "readLen=" << readLen << std::endl;
 				throw new std::runtime_error("handlePacket() tap.write() failed");
 			} else {
-				D(std::cout << "Written data to TAP" << std::endl;)
+				DEBUG_ENABLED(std::cout << "Written data to TAP" << std::endl;)
 			}
 		}
 	} else {
@@ -90,7 +90,7 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 			throw new std::system_error(std::error_code(errno, std::generic_category()),
 				std::string("handlePacket() sendto() failed"));
 		} else {
-			D(std::cout << "handlePacket() Send packet to peer" << std::endl;)
+			DEBUG_ENABLED(std::cout << "handlePacket() Send packet to peer" << std::endl;)
 		}
 	}
 
@@ -121,7 +121,7 @@ int handleTap(int fd, char *buf, int bufLen, int readLen, DTLS::Connection *conn
 			throw new std::system_error(std::error_code(errno, std::generic_category()),
 				std::string("handleTap() sendto() failed"));
 		} else {
-			D(std::cout << "handleTap() Send packet to peer" << std::endl;)
+			DEBUG_ENABLED(std::cout << "handleTap() Send packet to peer" << std::endl;)
 			packetCount++;
 		}
 	}
@@ -214,7 +214,7 @@ int main(int argc, char **argv) {
 							std::string("main() recvfrom() failed"));
 					}
 				} else {
-					D(std::cout << "received a packet" << std::endl;)
+					DEBUG_ENABLED(std::cout << "received a packet" << std::endl;)
 				}
 
 				if (handlePacket(fd, conn, buf, 2048, ret, &src_addr, tap) == 1) {
@@ -224,7 +224,7 @@ int main(int argc, char **argv) {
 				// There is data on the TAP interface
 				int readLen = tap.read(buf, 2048);
 
-				D(std::cout << "TAP got data" << std::endl;)
+				DEBUG_ENABLED(std::cout << "TAP got data" << std::endl;)
 				if (handleTap(fd, buf, 2048, readLen, &conn, server) < 0) {
 					throw new std::runtime_error("handleTap() didn't send any packets");
 				}
