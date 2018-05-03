@@ -3,6 +3,7 @@ PROJECT(Astraeus CXX)
 
 option(ASTRAEUSVPN_BUILD_TBB "Build TBB in AstraeusVPN" ON)
 option(ASTRAEUSVPN_BUILD_LIBSODIUM "Build libsodium in AstraeusVPN" ON)
+option(ASTRAEUSVPN_BUILD_OPENSSL "Build libsodium in AstraeusVPN" ON)
 option(ASTRAEUSVPN_BUILD_HEXDUMP "Build hexdump in AstraeusVPN" ON)
 option(ASTRAEUSVPN_BUILD_BINARIES "Build application binaries for AstraeusVPN" ON)
 
@@ -31,10 +32,12 @@ ADD_SUBDIRECTORY(deps)
 LINK_DIRECTORIES(
 	${CMAKE_CURRENT_SOURCE_DIR}/deps/tbb
 	${CMAKE_CURRENT_SOURCE_DIR}/deps/libsodium_install/lib
+	${CMAKE_CURRENT_SOURCE_DIR}/deps/openssl
 )
 INCLUDE_DIRECTORIES(
 	${CMAKE_CURRENT_SOURCE_DIR}/deps/tbb/include
 	${CMAKE_CURRENT_SOURCE_DIR}/deps/libsodium_install/include
+	${CMAKE_CURRENT_SOURCE_DIR}/deps/openssl/include/
 )
 
 SET(ALL_LIBS
