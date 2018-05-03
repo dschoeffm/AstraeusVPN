@@ -10,7 +10,7 @@ if(ASTRAEUSVPN_BUILD_OPENSSL)
 		WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/openssl/
 	)
 
-	add_custom_target(OpenSSL DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/openssl/libssl.a
+	add_custom_target(openssl DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/openssl/libssl.a
 		${CMAKE_CURRENT_SOURCE_DIR}/openssl/libcrypto.a)
 endif()
 
