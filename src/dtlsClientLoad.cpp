@@ -43,6 +43,8 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 	DEBUG_ENABLED(std::cout << "run handlePacket" << std::endl;)
 
 	int totalRead = 0;
+	int totalRecv = 0;
+	int written = 0;
 
 	if (recvBytes > 0) {
 		if (BIO_write(conn.rbio, buf, recvBytes) != recvBytes) {
@@ -79,7 +81,7 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 			while (written < wDataLen) {
 				written += SSL_write(conn.ssl, wData + written, 500);
 
-				int totalRead = 0;
+				// int totalRead = 0;
 				int readCount;
 				// while(totalRead < written){
 				while ((readCount = BIO_read(conn.wbio, buf, 1400)) > 0) {
@@ -98,6 +100,27 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 					}
 				}
 				//}
+
+				socklen_t addrlen = sizeof(struct sockaddr_in);
+
+				int ret = recvfrom(fd, (void *)buf, 1400, MSG_DONTWAIT, NULL, NULL);
+				if (ret > 0) {
+					totalRecv += ret;
+				}
+				/*
+				if(ret > 0){
+					std::cout << "got packet" << std::endl;
+					if (BIO_write(conn.rbio, buf, recvBytes) != recvBytes) {
+						throw new std::runtime_error("handlePacket() BIO_write() failed");
+					}
+					ret = SSL_read(conn.ssl, buf, bufLen);
+					if(ret > 0){
+						totalRecv += ret;
+					} else {
+						std::cout << "ret was <0" << std::endl;
+					}
+				}
+				*/
 			}
 		}
 	}
@@ -117,12 +140,35 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 		}
 	}
 
-	if ((SSL_get_shutdown(conn.ssl) != 0) || (totalSent >= wDataLen)) {
-		if (SSL_shutdown(conn.ssl) == 1) {
-			SSL_free(conn.ssl);
-			return 1;
+	DEBUG_ENABLED(std::cout << "Waiting to receive all the data" << std::endl;)
+
+	while ((totalRecv < totalRead) && (stopFlag == 0)) {
+		socklen_t addrlen = sizeof(struct sockaddr_in);
+
+		int ret = recvfrom(
+			fd, (void *)buf, 1400, MSG_DONTWAIT, (struct sockaddr *)&src_addr, &addrlen);
+		if (ret > 0) {
+			totalRecv += ret;
 		}
+		/*
+		if(ret > 0){
+			if (BIO_write(conn.rbio, buf, recvBytes) != recvBytes) {
+				throw new std::runtime_error("handlePacket() BIO_write() failed");
+			}
+			ret = SSL_read(conn.ssl, buf, bufLen);
+			if(ret > 0){
+				totalRecv += ret;
+			}
+		}
+		*/
 	}
+
+	// if ((SSL_get_shutdown(conn.ssl) != 0) || (totalSent >= wDataLen)) {
+	if (SSL_shutdown(conn.ssl) == 1) {
+		SSL_free(conn.ssl);
+		return 1;
+	}
+	//}
 
 	return 0;
 };
@@ -147,49 +193,55 @@ void runThread(
 
 	char buf[1400];
 
-	// Start the handshake
-	SSL_connect(conn.ssl);
-	handlePacket(fd, conn, buf, 1400, 0, &server, wData, wDataLen, totalSent);
+	try {
 
-	while (stopFlag == 0) {
-		struct sockaddr_in src_addr;
-		socklen_t addrlen = sizeof(struct sockaddr_in);
+		// Start the handshake
+		SSL_connect(conn.ssl);
+		handlePacket(fd, conn, buf, 1400, 0, &server, wData, wDataLen, totalSent);
 
-		// A DTLS packet is ready to be received
-		ret = recvfrom(fd, (void *)buf, 1400, 0, (struct sockaddr *)&src_addr, &addrlen);
-		if (ret < 0) {
-			if ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR)) {
+		while (stopFlag == 0) {
+			struct sockaddr_in src_addr;
+			socklen_t addrlen = sizeof(struct sockaddr_in);
 
-				// See if we can send data
-				int readCount;
-				while ((readCount = BIO_read(conn.wbio, buf, 1400)) > 0) {
-					int sendBytes = sendto(fd, buf, readCount, 0,
-						(struct sockaddr *)&src_addr, sizeof(struct sockaddr_in));
+			// A DTLS packet is ready to be received
+			ret = recvfrom(fd, (void *)buf, 1400, 0, (struct sockaddr *)&src_addr, &addrlen);
+			if (ret < 0) {
+				if ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR)) {
 
-					if (sendBytes != readCount) {
-						throw new std::system_error(
-							std::error_code(errno, std::generic_category()),
-							std::string("handlePacket() sendto() failed"));
-					} else {
-						DEBUG_ENABLED(
-							std::cout << "handlePacket() Send packet to peer" << std::endl;)
-						totalSent += sendBytes;
+					// See if we can send data
+					int readCount;
+					while ((readCount = BIO_read(conn.wbio, buf, 1400)) > 0) {
+						int sendBytes = sendto(fd, buf, readCount, 0,
+							(struct sockaddr *)&src_addr, sizeof(struct sockaddr_in));
+
+						if (sendBytes != readCount) {
+							throw new std::system_error(
+								std::error_code(errno, std::generic_category()),
+								std::string("handlePacket() sendto() failed"));
+						} else {
+							DEBUG_ENABLED(std::cout << "handlePacket() Send packet to peer"
+													<< std::endl;)
+							totalSent += sendBytes;
+						}
 					}
+
+					continue;
+				} else {
+					throw new std::system_error(
+						std::error_code(errno, std::generic_category()),
+						std::string("main() recvfrom() failed"));
 				}
-
-				continue;
 			} else {
-				throw new std::system_error(std::error_code(errno, std::generic_category()),
-					std::string("main() recvfrom() failed"));
+				DEBUG_ENABLED(std::cout << "received a packet" << std::endl;)
 			}
-		} else {
-			DEBUG_ENABLED(std::cout << "received a packet" << std::endl;)
-		}
 
-		if (handlePacket(fd, conn, buf, 1400, ret, &src_addr, wData, wDataLen, totalSent) ==
-			1) {
-			stopFlag = 1;
+			if (handlePacket(
+					fd, conn, buf, 1400, ret, &src_addr, wData, wDataLen, totalSent) == 1) {
+				stopFlag = 1;
+			}
 		}
+	} catch (std::exception *e) {
+		std::cout << "Caugth exception: " << e->what() << std::endl;
 	}
 
 	close(fd);
