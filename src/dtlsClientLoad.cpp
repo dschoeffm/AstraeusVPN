@@ -37,9 +37,11 @@ void sigHandler(int sig) {
 }
 
 int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recvBytes,
-	struct sockaddr_in *src_addr, uint8_t *wData, unsigned int wDataLen) {
+	struct sockaddr_in *src_addr, uint8_t *wData, unsigned int wDataLen, uint64_t &totalSent) {
 
 	DEBUG_ENABLED(std::cout << "run handlePacket" << std::endl;)
+
+	int totalRead = 0;
 
 	if (recvBytes > 0) {
 		if (BIO_write(conn.rbio, buf, recvBytes) != recvBytes) {
@@ -52,6 +54,7 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 
 		// Try to read incoming byte from the connection
 		int readLen = SSL_read(conn.ssl, buf, bufLen);
+		totalRead += readLen;
 		if ((readLen <= 0) && (SSL_get_shutdown(conn.ssl) == 0)) {
 			throw new std::runtime_error("handlePacket() SSL_read() failed");
 		}
@@ -71,13 +74,34 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 			std::cout << "Algorith: " << SSL_get_cipher_name(conn.ssl)
 					  << " Keylength: " << SSL_get_cipher_bits(conn.ssl, nullptr)
 					  << std::endl;
-			SSL_write(conn.ssl, wData, wDataLen);
+			int written = 0;
+			while(written < wDataLen){
+				written += SSL_write(conn.ssl, wData + written, 500);
+
+				int totalRead = 0;
+				int readCount;
+				//while(totalRead < written){
+					while ((readCount = BIO_read(conn.wbio, buf, 1400)) > 0) {
+						totalRead += readCount;
+						int sendBytes = sendto(
+							fd, buf, readCount, 0, (struct sockaddr *)src_addr, sizeof(struct sockaddr_in));
+
+						if (sendBytes != readCount) {
+							throw new std::system_error(std::error_code(errno, std::generic_category()),
+								std::string("handlePacket() sendto() failed"));
+						} else {
+							DEBUG_ENABLED(std::cout << "handlePacket() Send packet to peer" << std::endl;)
+							totalSent += sendBytes;
+						}
+					}
+				//}
+			}
 		}
 	}
 
 	// Write out all data
 	int readCount;
-	while ((readCount = BIO_read(conn.wbio, buf, bufLen)) > 0) {
+	while ((readCount = BIO_read(conn.wbio, buf, 1400)) > 0) {
 		int sendBytes = sendto(
 			fd, buf, readCount, 0, (struct sockaddr *)src_addr, sizeof(struct sockaddr_in));
 
@@ -86,10 +110,11 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 				std::string("handlePacket() sendto() failed"));
 		} else {
 			DEBUG_ENABLED(std::cout << "handlePacket() Send packet to peer" << std::endl;)
+			totalSent += sendBytes;
 		}
 	}
 
-	if (SSL_get_shutdown(conn.ssl) != 0) {
+	if ((SSL_get_shutdown(conn.ssl) != 0) || (totalSent >= wDataLen)) {
 		if (SSL_shutdown(conn.ssl) == 1) {
 			SSL_free(conn.ssl);
 			return 1;
@@ -104,6 +129,8 @@ void runThread(
 
 	int ret;
 
+	uint64_t totalSent = 0;
+
 	int fd = DTLS::createSocket();
 	connect(fd, reinterpret_cast<sockaddr *>(&server), sizeof(struct sockaddr_in));
 
@@ -115,20 +142,36 @@ void runThread(
 
 	DTLS::Connection conn = DTLS::createClientConn(ctx);
 
-	char buf[2048];
+	char buf[1400];
 
 	// Start the handshake
 	SSL_connect(conn.ssl);
-	handlePacket(fd, conn, buf, 2048, 0, &server, wData, wDataLen);
+	handlePacket(fd, conn, buf, 1400, 0, &server, wData, wDataLen, totalSent);
 
 	while (stopFlag == 0) {
 		struct sockaddr_in src_addr;
 		socklen_t addrlen = sizeof(struct sockaddr_in);
 
 		// A DTLS packet is ready to be received
-		ret = recvfrom(fd, (void *)buf, 2048, 0, (struct sockaddr *)&src_addr, &addrlen);
+		ret = recvfrom(fd, (void *)buf, 1400, 0, (struct sockaddr *)&src_addr, &addrlen);
 		if (ret < 0) {
 			if ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR)) {
+
+				// See if we can send data
+				int readCount;
+				while ((readCount = BIO_read(conn.wbio, buf, 1400)) > 0) {
+					int sendBytes = sendto(
+						fd, buf, readCount, 0, (struct sockaddr *)&src_addr, sizeof(struct sockaddr_in));
+
+					if (sendBytes != readCount) {
+						throw new std::system_error(std::error_code(errno, std::generic_category()),
+							std::string("handlePacket() sendto() failed"));
+					} else {
+						DEBUG_ENABLED(std::cout << "handlePacket() Send packet to peer" << std::endl;)
+						totalSent += sendBytes;
+					}
+				}
+
 				continue;
 			} else {
 				throw new std::system_error(std::error_code(errno, std::generic_category()),
@@ -138,7 +181,7 @@ void runThread(
 			DEBUG_ENABLED(std::cout << "received a packet" << std::endl;)
 		}
 
-		if (handlePacket(fd, conn, buf, 2048, ret, &src_addr, wData, wDataLen) == 1) {
+		if (handlePacket(fd, conn, buf, 1400, ret, &src_addr, wData, wDataLen, totalSent) == 1) {
 			stopFlag = 1;
 		}
 	}
@@ -175,12 +218,25 @@ int main(int argc, char **argv) {
 
 		uint8_t *wData = reinterpret_cast<uint8_t *>(malloc(DataLen));
 
+/*
 		std::thread *threads =
 			reinterpret_cast<std::thread *>(malloc(sizeof(std::thread) * numConns));
 
 		for (int i = 0; i < numConns; i++) {
 			threads[i] = std::thread(runThread, server, ctx, wData, DataLen);
 			server.sin_port = htons(ntohs(server.sin_port) + 1);
+		}
+*/
+
+		std::thread threads[512];
+
+		for(int i=0; i<numConns; i++){
+			threads[i]= std::thread(runThread, server, ctx, wData, DataLen);
+			server.sin_port = htons(ntohs(server.sin_port) + 1);
+		}
+
+		for(int i=0; i<numConns; i++){
+			threads[i].join();
 		}
 
 		std::cout << "Client shutting down..." << std::endl;
