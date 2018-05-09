@@ -37,7 +37,8 @@ void sigHandler(int sig) {
 }
 
 int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recvBytes,
-	struct sockaddr_in *src_addr, uint8_t *wData, unsigned int wDataLen, uint64_t &totalSent) {
+	struct sockaddr_in *src_addr, uint8_t *wData, unsigned int wDataLen,
+	uint64_t &totalSent) {
 
 	DEBUG_ENABLED(std::cout << "run handlePacket" << std::endl;)
 
@@ -75,25 +76,27 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 					  << " Keylength: " << SSL_get_cipher_bits(conn.ssl, nullptr)
 					  << std::endl;
 			int written = 0;
-			while(written < wDataLen){
+			while (written < wDataLen) {
 				written += SSL_write(conn.ssl, wData + written, 500);
 
 				int totalRead = 0;
 				int readCount;
-				//while(totalRead < written){
-					while ((readCount = BIO_read(conn.wbio, buf, 1400)) > 0) {
-						totalRead += readCount;
-						int sendBytes = sendto(
-							fd, buf, readCount, 0, (struct sockaddr *)src_addr, sizeof(struct sockaddr_in));
+				// while(totalRead < written){
+				while ((readCount = BIO_read(conn.wbio, buf, 1400)) > 0) {
+					totalRead += readCount;
+					int sendBytes = sendto(fd, buf, readCount, 0, (struct sockaddr *)src_addr,
+						sizeof(struct sockaddr_in));
 
-						if (sendBytes != readCount) {
-							throw new std::system_error(std::error_code(errno, std::generic_category()),
-								std::string("handlePacket() sendto() failed"));
-						} else {
-							DEBUG_ENABLED(std::cout << "handlePacket() Send packet to peer" << std::endl;)
-							totalSent += sendBytes;
-						}
+					if (sendBytes != readCount) {
+						throw new std::system_error(
+							std::error_code(errno, std::generic_category()),
+							std::string("handlePacket() sendto() failed"));
+					} else {
+						DEBUG_ENABLED(
+							std::cout << "handlePacket() Send packet to peer" << std::endl;)
+						totalSent += sendBytes;
 					}
+				}
 				//}
 			}
 		}
@@ -160,14 +163,16 @@ void runThread(
 				// See if we can send data
 				int readCount;
 				while ((readCount = BIO_read(conn.wbio, buf, 1400)) > 0) {
-					int sendBytes = sendto(
-						fd, buf, readCount, 0, (struct sockaddr *)&src_addr, sizeof(struct sockaddr_in));
+					int sendBytes = sendto(fd, buf, readCount, 0,
+						(struct sockaddr *)&src_addr, sizeof(struct sockaddr_in));
 
 					if (sendBytes != readCount) {
-						throw new std::system_error(std::error_code(errno, std::generic_category()),
+						throw new std::system_error(
+							std::error_code(errno, std::generic_category()),
 							std::string("handlePacket() sendto() failed"));
 					} else {
-						DEBUG_ENABLED(std::cout << "handlePacket() Send packet to peer" << std::endl;)
+						DEBUG_ENABLED(
+							std::cout << "handlePacket() Send packet to peer" << std::endl;)
 						totalSent += sendBytes;
 					}
 				}
@@ -181,7 +186,8 @@ void runThread(
 			DEBUG_ENABLED(std::cout << "received a packet" << std::endl;)
 		}
 
-		if (handlePacket(fd, conn, buf, 1400, ret, &src_addr, wData, wDataLen, totalSent) == 1) {
+		if (handlePacket(fd, conn, buf, 1400, ret, &src_addr, wData, wDataLen, totalSent) ==
+			1) {
 			stopFlag = 1;
 		}
 	}
@@ -218,24 +224,24 @@ int main(int argc, char **argv) {
 
 		uint8_t *wData = reinterpret_cast<uint8_t *>(malloc(DataLen));
 
-/*
-		std::thread *threads =
-			reinterpret_cast<std::thread *>(malloc(sizeof(std::thread) * numConns));
+		/*
+				std::thread *threads =
+					reinterpret_cast<std::thread *>(malloc(sizeof(std::thread) * numConns));
+
+				for (int i = 0; i < numConns; i++) {
+					threads[i] = std::thread(runThread, server, ctx, wData, DataLen);
+					server.sin_port = htons(ntohs(server.sin_port) + 1);
+				}
+		*/
+
+		std::thread threads[512];
 
 		for (int i = 0; i < numConns; i++) {
 			threads[i] = std::thread(runThread, server, ctx, wData, DataLen);
 			server.sin_port = htons(ntohs(server.sin_port) + 1);
 		}
-*/
 
-		std::thread threads[512];
-
-		for(int i=0; i<numConns; i++){
-			threads[i]= std::thread(runThread, server, ctx, wData, DataLen);
-			server.sin_port = htons(ntohs(server.sin_port) + 1);
-		}
-
-		for(int i=0; i<numConns; i++){
+		for (int i = 0; i < numConns; i++) {
 			threads[i].join();
 		}
 
