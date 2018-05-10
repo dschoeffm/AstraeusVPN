@@ -142,13 +142,15 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 
 	DEBUG_ENABLED(std::cout << "Waiting to receive all the data" << std::endl;)
 
-	while ((totalRecv < totalRead) && (stopFlag == 0)) {
+	int counter = 0;
+	while ((totalRecv < totalRead) && (stopFlag == 0) && (counter < 5)) {
 		socklen_t addrlen = sizeof(struct sockaddr_in);
 
-		int ret = recvfrom(
-			fd, (void *)buf, 1400, MSG_DONTWAIT, (struct sockaddr *)&src_addr, &addrlen);
+		int ret = recvfrom(fd, (void *)buf, 1400, 0, (struct sockaddr *)&src_addr, &addrlen);
 		if (ret > 0) {
 			totalRecv += ret;
+		} else {
+			counter++;
 		}
 		/*
 		if(ret > 0){
@@ -161,6 +163,11 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 			}
 		}
 		*/
+	}
+
+	if (counter > 1) {
+		std::cout << "shutdown because of counter" << std::endl;
+		return 1;
 	}
 
 	// if ((SSL_get_shutdown(conn.ssl) != 0) || (totalSent >= wDataLen)) {
