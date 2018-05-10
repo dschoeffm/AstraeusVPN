@@ -20,6 +20,16 @@
 
 using namespace std;
 
+// From:
+// https://github.com/gallenmu/sheep/blob/master/CPULoader/precise_timer.h
+inline void wait_cycles(uint32_t cycles) {
+	asm volatile("mov %0, %%ecx\n\t"
+				 "inc %%ecx\n\t"
+				 "1: dec %%ecx\n\t"
+				 "cmp $0, %%ecx\n\t"
+				 "jnz 1b" ::"r"(cycles));
+}
+
 // Taken from:
 // https://stackoverflow.com/a/20602159
 struct pairhash {
@@ -44,7 +54,7 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 
 	int totalRead = 0;
 	int totalRecv = 0;
-	int written = 0;
+	//	int written = 0;
 
 	if (recvBytes > 0) {
 		if (BIO_write(conn.rbio, buf, recvBytes) != recvBytes) {
@@ -77,7 +87,7 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 			std::cout << "Algorith: " << SSL_get_cipher_name(conn.ssl)
 					  << " Keylength: " << SSL_get_cipher_bits(conn.ssl, nullptr)
 					  << std::endl;
-			int written = 0;
+			unsigned int written = 0;
 			while (written < wDataLen) {
 				written += SSL_write(conn.ssl, wData + written, 500);
 
@@ -101,7 +111,8 @@ int handlePacket(int fd, DTLS::Connection &conn, char *buf, int bufLen, int recv
 				}
 				//}
 
-				socklen_t addrlen = sizeof(struct sockaddr_in);
+				// Make sure, that the receiver is not overloaded
+				wait_cycles(100);
 
 				int ret = recvfrom(fd, (void *)buf, 1400, MSG_DONTWAIT, NULL, NULL);
 				if (ret > 0) {
